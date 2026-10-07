@@ -1,0 +1,16 @@
+# Build
+.gradle/
+build/
+local.properties
+*.apk
+*.aab
+
+# IDE
+.idea/
+*.iml
+.DS_Store
+
+# Scratch / agent workspace
+.superpowers/
+captures/
+*.log

@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Evenlight — screen mockups</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT,WONK@0,9..144,300..700,0..100,0..1&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F4EFE6; --card:#FBF8F2; --ink:#2A2622; --muted:#6E6656; --hair:#D9D0BF;
+    --n-surface:#17150F; --n-text:#E9E3D6; --n-hair:#332F26; --n-muted:#8C8471;
+    --r-pill:999px; --r-card:20px; --r-chip:12px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-font-smoothing:antialiased}
+  /* paper grain lives on the chrome surfaces only — never on a measured band */
+  .grain{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='.42'/%3E%3C/svg%3E");background-blend-mode:multiply}
+  body{
+    background:#E7E0D3; color:var(--ink);
+    font-family:'Instrument Sans',system-ui,sans-serif;
+    padding:56px 40px 96px;
+  }
+  .serif{font-family:'Fraunces',Georgia,serif;font-variation-settings:'opsz' 40,'SOFT' 50,'WONK' 1;font-weight:400}
+  header.page{max-width:1500px;margin:0 auto 44px}
+  header.page h1{font-size:34px;letter-spacing:-.01em}
+  header.page p{margin-top:10px;color:var(--muted);font-size:14px;max-width:62ch;line-height:1.6}
+
+  .boards{display:flex;gap:34px;flex-wrap:wrap;justify-content:center;max-width:1500px;margin:0 auto}
+  .unit{width:300px}
+  .label{font-size:11px;letter-spacing:.11em;text-transform:uppercase;color:#7B7263;margin:0 0 10px 4px}
+
+  .phone{
+    position:relative;width:300px;height:646px;border-radius:38px;overflow:hidden;
+    background:var(--paper);color:var(--ink);
+    box-shadow:
+      inset 0 0 0 .5px rgba(255,255,255,.55),
+      inset 0 0 0 1px rgba(42,38,34,.07),
+      0 1px 1px rgba(42,38,34,.05),
+      0 6px 14px -8px rgba(42,38,34,.16),
+      0 26px 48px -26px rgba(42,38,34,.42);
+    display:flex;flex-direction:column;
+  }
+  .phone.night{background:var(--n-surface);color:var(--n-text);
+    box-shadow:inset 0 0 0 .5px rgba(233,227,214,.10),inset 0 0 0 1px rgba(0,0,0,.5),
+      0 1px 1px rgba(0,0,0,.3),0 6px 14px -8px rgba(0,0,0,.5),0 26px 48px -26px rgba(0,0,0,.7)}
+  .status{display:flex;justify-content:space-between;padding:15px 22px 4px;font-size:11.5px;font-weight:500;color:var(--ink)}
+  .night .status{color:var(--n-text)}
+  .body{flex:1;padding:14px 20px 0;display:flex;flex-direction:column}
+  .homebar{height:20px;display:flex;align-items:center;justify-content:center}
+  .homebar i{display:block;width:104px;height:4px;border-radius:99px;background:var(--ink);opacity:.85}
+  .night .homebar i{background:var(--n-text)}
+
+  /* ---- Tonight ---- */
+  .eyebrow{font-size:11px;letter-spacing:.11em;text-transform:uppercase;color:var(--muted)}
+  .night .eyebrow{color:var(--n-muted)}
+  .big{font-size:44px;line-height:1.0;letter-spacing:-.028em;margin-top:12px;color:rgba(42,38,34,.93);
+       font-variation-settings:'opsz' 72,'SOFT' 60,'WONK' 1}
+  .night .big{color:rgba(233,227,214,.93)}
+  .big em{font-style:normal;font-variation-settings:'opsz' 72,'SOFT' 90,'WONK' 1}
+  .sub{margin-top:9px;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .night .sub{color:var(--n-muted)}
+  .pill{
+    display:flex;align-items:center;justify-content:center;gap:8px;height:52px;border-radius:var(--r-pill);
+    background:var(--ink);color:var(--card);font-size:15px;font-weight:500;letter-spacing:.01em;
+  }
+  .night .pill{background:var(--n-text);color:var(--n-surface)}
+  .pill.ghost{background:transparent;color:var(--muted);font-weight:400;height:34px;font-size:13px}
+  .prevcard{
+    margin:26px auto 0;width:186px;border-radius:var(--r-card);overflow:hidden;background:var(--card);
+    transform:rotate(1.2deg);
+    box-shadow:inset 0 0 0 .5px rgba(255,255,255,.6),0 1px 1px rgba(42,38,34,.05),
+      0 5px 10px -6px rgba(42,38,34,.18),0 22px 34px -20px rgba(42,38,34,.45);
+  }
+  .field{display:flex;flex-direction:column;height:118px}
+  .field span{flex:1}
+  .pc-meta{padding:11px 13px 13px}
+  .pc-meta b{display:block;font-family:'Fraunces',serif;font-variation-settings:'opsz' 28,'SOFT' 60,'WONK' 1;font-weight:400;font-size:19px;letter-spacing:-.018em}
+  .pc-meta i{display:block;margin-top:3px;font-size:10.5px;font-style:normal;color:var(--muted);font-variant-numeric:tabular-nums}
+
+  /* ---- Shoot ---- */
+  .viewfinder{position:relative;flex:1;margin:0 -20px;overflow:hidden;background:#2b2f3a}
+  .vf-sim{position:absolute;inset:0;display:flex;flex-direction:column}
+  .vf-sim span{flex:1}
+  .guides{position:absolute;inset:0}
+  .guides i{position:absolute;background:rgba(251,248,242,.42)}
+  .guides .h1{left:0;right:0;top:38%;height:1px}
+  .guides .h2{left:0;right:0;top:63%;height:1px}
+  .guides .v1{top:38%;bottom:0;left:22%;width:1px}
+  .guides .v2{top:63%;bottom:0;right:26%;width:1px}
+  .vf-tag{
+    position:absolute;left:16px;top:14px;padding:5px 11px;border-radius:var(--r-chip);
+    background:rgba(23,21,15,.5);color:#F4EFE6;font-size:11px;letter-spacing:.05em;font-variant-numeric:tabular-nums;
+    backdrop-filter:blur(6px);
+  }
+  .shutter{
+    position:absolute;left:0;right:0;bottom:18px;display:flex;justify-content:center;
+  }
+  .shutter div{
+    height:52px;padding:0 40px;border-radius:var(--r-pill);background:var(--card);color:var(--ink);
+    display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:500;
+    box-shadow:0 6px 18px -8px rgba(0,0,0,.6);
+  }
+
+  /* ---- Card ---- */
+  .artefact{border-radius:var(--r-card);overflow:hidden;background:var(--card);
+    box-shadow:inset 0 0 0 .5px rgba(255,255,255,.65),0 1px 1px rgba(42,38,34,.05),
+      0 8px 16px -10px rgba(42,38,34,.2),0 26px 44px -26px rgba(42,38,34,.5)}
+  .artefact .field{height:216px}
+  .strip{padding:13px 16px}
+  .strip b{font-family:'Fraunces',serif;font-variation-settings:'opsz' 48,'SOFT' 70,'WONK' 1;font-weight:400;
+     font-size:29px;letter-spacing:-.022em}
+  .meta{padding:14px 16px 0;display:flex;align-items:flex-end;justify-content:space-between;gap:10px}
+  .meta .d{font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums;line-height:1.5}
+  .neigh{display:flex;gap:5px}
+  .neigh i{display:block;width:17px;height:17px;border-radius:5px;box-shadow:0 0 0 1px rgba(42,38,34,.10) inset}
+  .wording{padding:11px 16px 0;font-size:13.5px;line-height:1.5;color:var(--ink);max-width:31ch}
+  .foot{padding:14px 16px 15px;margin-top:12px;border-top:1px solid var(--hair);
+        font-size:10.5px;letter-spacing:.055em;text-transform:uppercase;color:var(--muted)}
+  .acts{display:flex;gap:22px;padding:18px 4px 0}
+  .acts a{font-size:13px;color:var(--muted);text-decoration:none;border-bottom:1px solid var(--hair);padding-bottom:2px}
+
+  /* ---- Stack ---- */
+  .stackhead{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px}
+  .stackhead b{font-family:'Fraunces',serif;font-variation-settings:'opsz' 40,'SOFT' 60,'WONK' 1;font-weight:400;font-size:24px;letter-spacing:-.02em}
+  .stackhead i{font-style:normal;font-size:11px;color:var(--n-muted);letter-spacing:.06em;font-variant-numeric:tabular-nums}
+  .scroll{flex:1;margin:0 -20px;padding:0 20px;overflow:hidden;display:flex;flex-direction:column;gap:14px}
+  .mini{border-radius:var(--r-card);overflow:hidden;background:var(--card);
+   box-shadow:inset 0 0 0 .5px rgba(255,255,255,.5),0 1px 1px rgba(0,0,0,.25),0 14px 24px -18px rgba(0,0,0,.8)}
+  .night .mini{background:#1E1B14}
+  .mini .field{height:88px}
+  .mini .mrow{display:flex;align-items:baseline;justify-content:space-between;padding:10px 13px}
+  .mini .mrow b{font-family:'Fraunces',serif;font-variation-settings:'opsz' 24,'SOFT' 60,'WONK' 1;font-weight:400;font-size:17px;letter-spacing:-.015em}
+  .mini .mrow i{font-style:normal;font-size:10.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .night .mini .mrow i{color:var(--n-muted)}
+  .hole{border:1px dashed var(--n-hair);border-radius:var(--r-card);height:88px;display:flex;align-items:center;justify-content:center}
+  .hole span{font-size:11px;color:var(--n-muted);letter-spacing:.06em;font-variant-numeric:tabular-nums}
+
+  /* ---- tokens ---- */
+  .tokens{max-width:1500px;margin:52px auto 0;background:var(--card);border-radius:var(--r-card);padding:26px 28px;
+          box-shadow:inset 0 0 0 .5px rgba(255,255,255,.6),0 14px 34px -26px rgba(42,38,34,.55)}
+  .tokens h2{font-family:'Fraunces',serif;font-variation-settings:'SOFT' 40,'WONK' 1;font-weight:400;font-size:20px;margin-bottom:18px}
+  .trow{display:flex;flex-wrap:wrap;gap:26px}
+  .sw{display:flex;flex-direction:column;gap:7px;font-size:10.5px;color:var(--muted);letter-spacing:.04em}
+  .sw i{display:block;width:62px;height:44px;border-radius:var(--r-chip);box-shadow:0 0 0 1px rgba(42,38,34,.09) inset}
+  .ramp{display:flex;align-items:baseline;gap:20px;flex-wrap:wrap}
+  .ramp span{color:var(--ink)}
+  .note{margin-top:20px;padding-top:16px;border-top:1px solid var(--hair);font-size:12.5px;line-height:1.65;color:var(--muted);max-width:88ch}
+  .note b{color:var(--ink);font-weight:500}
+
+  /* ---- motion filmstrip ---- */
+  .film{display:flex;gap:18px;flex-wrap:wrap}
+  .frame{width:158px;display:flex;flex-direction:column}
+  .frame b{display:block;font-size:11px;letter-spacing:.09em;font-variant-numeric:tabular-nums;color:var(--ink);margin-bottom:7px}
+  .frame i{display:block;font-style:normal;font-size:10.5px;line-height:1.5;color:var(--muted);margin-top:8px}
+  .frame .clip,.frame .shot{flex:none;width:158px;height:150px;border-radius:14px;overflow:hidden;background:var(--card);
+    box-shadow:inset 0 0 0 .5px rgba(255,255,255,.6),0 6px 14px -10px rgba(42,38,34,.4)}
+  .reveal{overflow:hidden}
+  .reveal .field{height:150px}
+  .strip2{height:30px;display:flex;align-items:center;padding:0 11px;font-family:'Fraunces',serif;
+    font-variation-settings:'opsz' 30,'SOFT' 70,'WONK' 1;font-size:16px;letter-spacing:-.02em;
+    border-radius:0 0 14px 14px;background:var(--card)}
+  .strip2:not([style*="#C2854A"]){color:transparent}
+
+  /* ---- responsive wires ---- */
+  .resp{display:flex;gap:22px;flex-wrap:wrap}
+  .rc{width:300px}
+  .rc b{display:block;font-size:12px;letter-spacing:.08em;text-transform:uppercase}
+  .rc i{display:block;font-style:normal;font-size:11px;color:var(--muted);margin:4px 0 12px}
+  .rc p{font-size:12px;line-height:1.6;color:var(--muted);margin-top:12px}
+  .wire{width:300px;height:210px;border-radius:16px;background:var(--paper);padding:14px;display:flex;
+    flex-direction:column;gap:9px;box-shadow:inset 0 0 0 .5px rgba(255,255,255,.6),0 8px 20px -14px rgba(42,38,34,.45)}
+  .wire.wide{flex-direction:row;gap:12px}
+  .pane{flex:1;display:flex;flex-direction:column;gap:8px}
+  .hd{width:52px;height:7px;border-radius:99px;background:rgba(42,38,34,.22)}
+  .bl{width:120px;height:26px;border-radius:8px;background:rgba(42,38,34,.3)}
+  .bl.big{width:150px;height:34px}
+  .ln{width:70%;height:6px;border-radius:99px;background:rgba(42,38,34,.13)}
+  .sq{width:100%;height:58px;border-radius:12px;background:linear-gradient(180deg,#1E2438 0 12%,#2A3350 12% 25%,#3C4A67 25% 37%,#5C6B82 37% 50%,#8A8375 50% 62%,#B08A5E 62% 75%,#C2854A 75% 87%,#3A322A 87% 100%)}
+  .sq.sm{height:38px}.sq.tall{height:96px}
+  .pillw{width:60%;height:26px;border-radius:99px;background:var(--ink);margin-top:auto}
+  .pair{display:flex;gap:9px}.pair .sq{width:50%}
+</style>
+</head>
+<body>
+
+<header class="page">
+  <h1 class="serif">Evenlight — four screens, one night theme</h1>
+  <p>Chrome is paper and ink only. Every saturated colour on these screens is a measured band from the sky;
+     there is no brand hue to compete with them. One evening is used throughout — 9 Oct, winner band
+     <span style="font-variant-numeric:tabular-nums">#C2854A</span>, sun 9&deg; — so the four screens are comparable.</p>
+</header>
+
+<div class="boards">
+
+  <!-- 1 TONIGHT -->
+  <div class="unit">
+    <p class="label">1 &nbsp;Tonight</p>
+    <div class="phone grain">
+      <div class="status"><span>17:26</span><span>&#9679; &#9679; &#9679;</span></div>
+      <div class="body">
+        <p class="eyebrow">hostel balcony</p>
+        <p class="big serif">in <em>14</em> min</p>
+        <p class="sub">sunset 17:40 &nbsp;&middot;&nbsp; evening 4</p>
+
+        <div class="prevcard">
+          <div class="field">
+            <span style="background:#2C3446"></span><span style="background:#3E4759"></span>
+            <span style="background:#525B6B"></span><span style="background:#6B7079"></span>
+            <span style="background:#7E7C78"></span><span style="background:#8A8378"></span>
+            <span style="background:#6E655C"></span><span style="background:#3A352F"></span>
+          </div>
+          <div class="pc-meta"><b>slate</b><i>8 Oct &middot; sun 6&deg;</i></div>
+        </div>
+
+        <div style="flex:1"></div>
+        <div class="pill">Shoot</div>
+        <div style="height:14px"></div>
+      </div>
+      <div class="homebar"><i></i></div>
+    </div>
+  </div>
+
+  <!-- 2 SHOOT -->
+  <div class="unit">
+    <p class="label">2 &nbsp;Shoot</p>
+    <div class="phone">
+      <div class="status" style="color:#F4EFE6"><span>17:46</span><span>&#9679; &#9679; &#9679;</span></div>
+      <div class="viewfinder">
+        <div class="vf-sim">
+          <span style="background:#1E2438"></span><span style="background:#2A3350"></span>
+          <span style="background:#3C4A67"></span><span style="background:#5C6B82"></span>
+          <span style="background:#8A8375"></span><span style="background:#B08A5E"></span>
+          <span style="background:#C2854A"></span><span style="background:#3A322A"></span>
+        </div>
+        <div class="guides"><i class="h1"></i><i class="h2"></i><i class="v1"></i><i class="v2"></i></div>
+        <div class="vf-tag">sunset 17:40 &nbsp;&middot;&nbsp; +6 min</div>
+        <div class="shutter"><div>Shoot</div></div>
+      </div>
+      <div class="homebar"><i></i></div>
+    </div>
+  </div>
+
+  <!-- 3 CARD -->
+  <div class="unit">
+    <p class="label">3 &nbsp;Card, on arrival</p>
+    <div class="phone grain">
+      <div class="status"><span>17:59</span><span>&#9679; &#9679; &#9679;</span></div>
+      <div class="body">
+        <div class="artefact">
+          <div class="field">
+            <span style="background:#1E2438"></span><span style="background:#2A3350"></span>
+            <span style="background:#3C4A67"></span><span style="background:#5C6B82"></span>
+            <span style="background:#8A8375"></span><span style="background:#B08A5E"></span>
+            <span style="background:#C2854A"></span><span style="background:#3A322A"></span>
+          </div>
+          <div class="strip" style="background:#C2854A;color:#FBF8F2"><b>brassy</b></div>
+          <div class="meta">
+            <div class="d">9 October<br>sun 9&deg;</div>
+            <div class="neigh" title="the winner's neighbours, above and below">
+              <i style="background:#B08A5E"></i><i style="background:#C2854A"></i><i style="background:#3A322A"></i>
+            </div>
+          </div>
+          <p class="wording">brassy light holding at the edge of the wall</p>
+          <div class="foot">measured, not adjusted &nbsp;&middot;&nbsp; 8 bands</div>
+        </div>
+        <div class="acts"><a>raw photo</a><a>share</a></div>
+        <div style="flex:1"></div>
+        <p class="sub" style="margin-bottom:12px">filed automatically &nbsp;&middot;&nbsp; nothing to press</p>      </div>
+      <div class="homebar"><i></i></div>
+    </div>
+  </div>
+
+  <!-- 4 STACK, NIGHT -->
+  <div class="unit">
+    <p class="label">4 &nbsp;Stack — night theme</p>
+    <div class="phone night grain">
+      <div class="status"><span>20:41</span><span>&#9679; &#9679; &#9679;</span></div>
+      <div class="body">
+        <div class="stackhead"><b class="serif">October</b><i>4 evenings &middot; 1 hole</i></div>
+        <div class="scroll">
+          <div class="mini">
+            <div class="field">
+              <span style="background:#232A44"></span><span style="background:#3A4260"></span>
+              <span style="background:#5E6478"></span><span style="background:#8E8478"></span>
+              <span style="background:#B4855F"></span><span style="background:#D08C46"></span>
+              <span style="background:#E0A25C"></span><span style="background:#4A3F35"></span>
+            </div>
+            <div class="mrow"><b class="serif">amber</b><i>5 Oct &middot; sun 14&deg;</i></div>
+          </div>
+          <div class="mini">
+            <div class="field">
+              <span style="background:#3A3B40"></span><span style="background:#4E4F54"></span>
+              <span style="background:#63635F"></span><span style="background:#75736A"></span>
+              <span style="background:#6E6A62"></span><span style="background:#5C5852"></span>
+              <span style="background:#4A4642"></span><span style="background:#33302D"></span>
+            </div>
+            <div class="mrow"><b class="serif">ash</b><i>6 Oct &middot; sun 6&deg;</i></div>
+          </div>
+          <div class="hole"><span>7 Oct — no photo</span></div>
+          <div class="mini">
+            <div class="field">
+              <span style="background:#2C3446"></span><span style="background:#3E4759"></span>
+              <span style="background:#525B6B"></span><span style="background:#6B7079"></span>
+              <span style="background:#7E7C78"></span><span style="background:#8A8378"></span>
+              <span style="background:#6E655C"></span><span style="background:#3A352F"></span>
+            </div>
+            <div class="mrow"><b class="serif">slate</b><i>8 Oct &middot; sun 6&deg;</i></div>
+          </div>
+          <div class="mini">
+            <div class="field">
+              <span style="background:#1E2438"></span><span style="background:#2A3350"></span>
+              <span style="background:#3C4A67"></span><span style="background:#5C6B82"></span>
+              <span style="background:#8A8375"></span><span style="background:#B08A5E"></span>
+              <span style="background:#C2854A"></span><span style="background:#3A322A"></span>
+            </div>
+            <div class="mrow"><b class="serif">brassy</b><i>9 Oct &middot; sun 9&deg;</i></div>
+          </div>
+        </div>
+      </div>
+      <div class="homebar"><i></i></div>
+    </div>
+  </div>
+</div>
+
+<section class="tokens">
+  <h2>Tokens, as shipped</h2>
+  <div class="trow">
+    <div class="sw"><i style="background:#F4EFE6"></i>paper<br>F4EFE6</div>
+    <div class="sw"><i style="background:#FBF8F2"></i>card<br>FBF8F2</div>
+    <div class="sw"><i style="background:#2A2622"></i>ink<br>2A2622</div>
+    <div class="sw"><i style="background:#6E6656"></i>muted<br>6E6656</div>
+    <div class="sw"><i style="background:#D9D0BF"></i>hairline<br>D9D0BF</div>
+    <div class="sw"><i style="background:#17150F"></i>night<br>17150F</div>
+    <div class="sw"><i style="background:#E9E3D6"></i>night text<br>E9E3D6</div>
+    <div class="sw"><i style="background:#332F26"></i>night hair<br>332F26</div>
+  </div>
+
+  <div style="height:26px"></div>
+  <div class="ramp">
+    <span class="serif" style="font-size:34px">brassy</span>
+    <span class="serif" style="font-size:20px">sunset 17:40</span>
+    <span style="font-size:15px">body — Instrument Sans</span>
+    <span style="font-size:11px;letter-spacing:.11em;text-transform:uppercase;color:#6E6656">caption 11</span>
+  </div>
+
+  <div class="note">
+    <p><b>Contrast rule that keeps the measured colour untouched.</b> The name sits on a solid strip of the
+    winner band. Text is paper when that band's relative luminance is under 0.45, ink above it. The strip
+    <span style="font-variant-numeric:tabular-nums">#C2854A</span> measures 0.29, so it carries paper — the
+    hue itself is never lightened, darkened or saturated to make the type readable.</p>
+    <p style="margin-top:10px"><b>Shape lock.</b> Actions are pills, cards 20, chips 12, and the colour field
+    is 0 — full bleed, because rounding a measured band would crop data. Spacing on a 4 grid, 20 gutter,
+    16 between stack cards.</p>
+  </div>
+</section>
+
+<section class="tokens">
+  <h2>Motion — the one delight, frame by frame</h2>
+  <p style="font-size:13px;color:var(--muted);line-height:1.6;max-width:74ch;margin-bottom:22px">
+    Shutter to card. Everything else in the app is under 150 ms or is the platform default. The bands are
+    revealed by clipping, never by animating height, so nothing reflows and the type never jumps.
+  </p>
+  <div class="film">
+    <div class="frame"><div class="shot" style="background:#2A3350"></div><b>0 ms</b><i>press in — scale .97, haptic tick, same frame</i></div>
+    <div class="frame"><div class="clip"><div class="reveal" style="height:34px"><div class="field"><span style="background:#1E2438"></span><span style="background:#2A3350"></span><span style="background:#3C4A67"></span><span style="background:#5C6B82"></span><span style="background:#8A8375"></span><span style="background:#B08A5E"></span><span style="background:#C2854A"></span><span style="background:#3A322A"></span></div></div></div><b>120 ms</b><i>top bands wipe down over the frozen preview</i></div>
+    <div class="frame"><div class="clip"><div class="reveal" style="height:96px"><div class="field"><span style="background:#1E2438"></span><span style="background:#2A3350"></span><span style="background:#3C4A67"></span><span style="background:#5C6B82"></span><span style="background:#8A8375"></span><span style="background:#B08A5E"></span><span style="background:#C2854A"></span><span style="background:#3A322A"></span></div></div></div><b>240 ms</b><i>paper rises from the bottom, still no text</i></div>
+    <div class="frame"><div class="clip"><div class="reveal" style="height:120px"><div class="field"><span style="background:#1E2438"></span><span style="background:#2A3350"></span><span style="background:#3C4A67"></span><span style="background:#5C6B82"></span><span style="background:#8A8375"></span><span style="background:#B08A5E"></span><span style="background:#C2854A"></span><span style="background:#3A322A"></span></div></div><div class="strip2" style="background:#C2854A"></div></div><b>360 ms</b><i>winner strip lands, name at opacity 0</i></div>
+    <div class="frame"><div class="clip"><div class="reveal" style="height:120px"><div class="field"><span style="background:#1E2438"></span><span style="background:#2A3350"></span><span style="background:#3C4A67"></span><span style="background:#5C6B82"></span><span style="background:#8A8375"></span><span style="background:#B08A5E"></span><span style="background:#C2854A"></span><span style="background:#3A322A"></span></div></div><div class="strip2" style="background:#C2854A;color:#FBF8F2">brassy</div></div><b>450 ms</b><i>name fades in, settles at rest — no overshoot</i></div>
+  </div>
+  <div class="note" style="margin-top:22px">
+    <p><b>Curves.</b> Reveal is <span style="font-variant-numeric:tabular-nums">spring(stiffness 220, damping 1)</span>
+    on the clip, never a bezier with an ease-in on the entrance. Name fade is 120 ms linear, starting at 330 ms
+    so it arrives into a surface that has already stopped moving. Card entry from
+    <span style="font-variant-numeric:tabular-nums">scale(.96) + opacity 0</span>, never from scale 0.</p>
+    <p style="margin-top:10px"><b>Haptics, one per action, on the same frame as the visual.</b> Light tick on
+    shutter press-in. Success tick when the card files. Nothing on scroll, nothing in a loop, nothing
+    while the model writes — a 1.2 s wait is not an event.</p>
+    <p style="margin-top:10px"><b>The stack is the second motion surface, and it is scroll-linked, not
+    decorative.</b> Cards scale <span style="font-variant-numeric:tabular-nums">.97 &rarr; 1</span> and
+    straighten from 1.2&deg; to 0&deg; as they reach centre, so the evening you are looking at is the only one
+    square. Driven from the scroll offset on the render thread; zero lines of animation code if the frame
+    budget can't hold 60 fps on the target device, in which case the rotation is cut first.</p>
+    <p style="margin-top:10px"><b>Reduce Motion collapses all of it</b> to a 120 ms cross-fade from preview to
+    finished card. The card still appears, the name still appears, nothing slides.</p>
+    <p style="margin-top:10px"><b>What is deliberately not animated:</b> the wording line. Gemma takes ~1.2 s
+    and the card is already finished when it arrives, so the line fades in once at 120 ms. No shimmer, no
+    skeleton, no "thinking" indicator — a spinner would advertise a delay nobody needs to feel.</p>
+  </div>
+</section>
+
+<section class="tokens">
+  <h2>Responsive — three width classes, one card</h2>
+  <p style="font-size:13px;color:var(--muted);line-height:1.6;max-width:74ch;margin-bottom:22px">
+    The card is an object with a fixed aspect, so it never stretches. What changes is how many you can see
+    and where the detail lives.
+  </p>
+  <div class="resp">
+    <div class="rc">
+      <b>Compact &nbsp;&middot;&nbsp; &lt; 600 dp</b>
+      <i>phone portrait — the four screens above</i>
+      <div class="wire"><span class="hd"></span><span class="bl big"></span><span class="ln"></span><span class="sq"></span><span class="pillw"></span></div>
+      <p>Stack 1-up. Gutter 20. Preview card 186 dp, rotated 1.2&deg;.</p>
+    </div>
+    <div class="rc">
+      <b>Medium &nbsp;&middot;&nbsp; 600&ndash;840 dp</b>
+      <i>foldable open, large phone landscape, tablet portrait</i>
+      <div class="wire"><span class="hd"></span><div class="pair"><span class="sq"></span><span class="sq"></span></div><span class="ln"></span><div class="pair"><span class="sq"></span><span class="sq"></span></div></div>
+      <p>Stack 2-up, 16 gap. Card caps at 340 dp wide and centres — it does not widen. Tonight keeps one column with the preview card at 240 dp.</p>
+    </div>
+    <div class="rc">
+      <b>Expanded &nbsp;&middot;&nbsp; &ge; 840 dp</b>
+      <i>tablet landscape, foldable at full width</i>
+      <div class="wire wide"><div class="pane"><span class="hd"></span><span class="sq sm"></span><span class="sq sm"></span><span class="sq sm"></span></div><div class="pane"><span class="bl"></span><span class="sq tall"></span><span class="ln"></span><span class="ln"></span></div></div>
+      <p>Two panes: stack left at 38%, card detail right, card max 420 dp with a 68% field. No bottom nav appears at any width — the app has four destinations and a back gesture.</p>
+    </div>
+  </div>
+  <div class="note" style="margin-top:22px">
+    <p><b>Font scale is the harder responsive case, not width.</b> Up to 1.15&times; nothing changes. Past that
+    the display ramp stops scaling proportionally (44 &rarr; capped 34) so "in 14 min" never pushes the preview
+    card off screen, and the 1.2&deg; rotation is dropped because rotated text at large scale reads badly.
+    Every tap target stays &ge; 48 dp, including the two text actions on the card screen, which get invisible
+    padding rather than a bigger label.</p>
+    <p style="margin-top:10px"><b>Corners.</b> Compose <span style="font-variant-numeric:tabular-nums">RoundedCornerShape</span>
+    is circular, not continuous. The 20 dp card radius is drawn as a squircle path, because the difference is
+    exactly the thing that reads as "native iOS app" versus "web page in a wrapper" — and it costs one
+    <span style="font-variant-numeric:tabular-nums">GenericShape</span>, not a library.</p>
+    <p style="margin-top:10px"><b>Landscape on a phone is not supported in v1.</b> Stated so it is a decision
+    rather than an oversight: the capture screen is portrait by nature, and a second layout for a state nobody
+    shoots in is scope we do not have before 11 Oct.</p>
+  </div>
+</section>
+
+</body>
+</html>
