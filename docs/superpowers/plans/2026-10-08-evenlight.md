@@ -356,10 +356,14 @@ class SunWindowTest {
 
     @Test fun sunsetDisplayedMinuteIsWithinAMinuteOfPublished() {
         // The home screen prints "sunset HH:mm", so the displayed minute must agree with reality. Assert
-        // proximity, not an exact string: today's computed instant sits 3.4 s from a minute boundary, so a
-        // pinned "17:40" would certify a near-tie and break the day the maths gets MORE accurate.
-        // Truncating sunset() to the minute instead of rounding puts the display 1.8 min out - which fails
-        // here, and that regression is the reason this test exists.
+        // proximity, not an exact string: today's computed instant sits 3.4 s from the half-minute
+        // ROUNDING TIE (26.6 s from the minute boundary it lands on), so a pinned "17:40" would certify a
+        // near-tie and break the day the maths gets MORE accurate. Truncating sunset() instead of rounding
+        // puts the display 108 s out - which fails here, and that regression is why this test exists.
+        // This 60 s bound is deliberately TIGHTER than the ±2-minute solver gates above: they measure the
+        // accuracy of the raw solve, this measures whether the printed minute is the one the solver
+        // computed. Red here with those gates green means bias passed 1 minute - a tuning signal, not a
+        // spec break.
         val s = SunWindow.sunset(LocalDate.of(2026, 10, 8), home, pkt)
         val published = ZonedDateTime.of(2026, 10, 8, 12, 40, 48, 0, ZoneId.of("UTC"))
             .withZoneSameInstant(pkt)
