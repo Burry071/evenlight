@@ -313,9 +313,12 @@ git commit -m "build: two-module Evenlight scaffold with a manifest test for the
 ```kotlin
 package com.burry071.evenlight.core
 
+import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
+import java.time.ZonedDateTime
+import kotlin.math.abs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -351,11 +354,23 @@ class SunWindowTest {
         assertEquals(-0.988, SunWindow.altitudeAt(utc, home), 0.05)
     }
 
-    @Test fun sunsetFormatsTheMinuteTheUserSees() {
-        // The only solar number the app ever displays. Published sunset is 12:40:48Z = 17:40:48 PKT,
-        // so sunset() must round to the nearest minute here - truncating would show 17:39.
-        assertEquals("17:40", SunWindow.sunset(LocalDate.of(2026, 10, 8), home, pkt)
-            .format(DateTimeFormatter.ofPattern("HH:mm")))
+    @Test fun sunsetDisplayedMinuteIsWithinAMinuteOfPublished() {
+        // The home screen prints "sunset HH:mm", so the displayed minute must agree with reality. Assert
+        // proximity, not an exact string: today's computed instant sits 3.4 s from a minute boundary, so a
+        // pinned "17:40" would certify a near-tie and break the day the maths gets MORE accurate.
+        // Truncating sunset() to the minute instead of rounding puts the display 1.8 min out - which fails
+        // here, and that regression is the reason this test exists.
+        val s = SunWindow.sunset(LocalDate.of(2026, 10, 8), home, pkt)
+        val published = ZonedDateTime.of(2026, 10, 8, 12, 40, 48, 0, ZoneId.of("UTC"))
+            .withZoneSameInstant(pkt)
+        val drift = abs(Duration.between(s, published).toSeconds())
+        assertTrue("displayed $s is ${drift}s from published $published", drift <= 60)
+    }
+
+    @Test fun altitudeForDisplayRoundsToWholeDegrees() {
+        // The app shows "sun 6°" - the second and last solar number it displays. Nothing else covers it.
+        assertEquals(52, SunWindow.altitudeForDisplay(LocalDateTime.of(2026, 10, 8, 7, 0), home))
+        assertEquals(-1, SunWindow.altitudeForDisplay(LocalDateTime.of(2026, 10, 8, 12, 40), home))
     }
 
     @Test fun noonAltitudeMatchesTheKnownValue() {
