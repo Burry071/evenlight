@@ -339,14 +339,23 @@ class SunWindowTest {
         assertTrue("expected $b < $a", b < a)
     }
 
-    @Test fun altitudeAtTheComputedSunsetCarriesTheSinglePassBias() {
-        // The solver uses ZENITH_SUNSET = 90.833 (34' refraction + 16' semidiameter), but evaluates
-        // decl/eqt once at local noon, so the altitude it lands on is not exactly -0.833. Measured
-        // 2026-10-08 with the validated prototype: -0.776. Pin the real value, not the convention;
-        // the 0.057 deg gap is the single-pass approximation the spec §8.2 chose deliberately.
+    @Test fun altitudeAtTheRoundedMinuteSunsetReturnsCarriesBothBiases() {
+        // Two error sources, both deliberate, both named so a future reader stops guessing:
+        // (a) the solver uses ZENITH_SUNSET = 90.833 (34' refraction + 16' semidiameter) but evaluates
+        //     decl/eqt once at local noon, so it does not land exactly on -0.833;
+        // (b) sunset() quantizes to the nearest whole minute (12:40:00Z for 2026-10-08), and this
+        //     assertion evaluates at that rounded minute, not at the exact instant.
+        // Measured from the compiled Kotlin, not derived by hand: -0.988.
         val sunsetLocal = SunWindow.sunset(LocalDate.of(2026, 10, 8), home, pkt)
         val utc = sunsetLocal.withZoneSameInstant(ZoneId.of("UTC")).toLocalDateTime()
-        assertEquals(-0.776, SunWindow.altitudeAt(utc, home), 0.05)
+        assertEquals(-0.988, SunWindow.altitudeAt(utc, home), 0.05)
+    }
+
+    @Test fun sunsetFormatsTheMinuteTheUserSees() {
+        // The only solar number the app ever displays. Published sunset is 12:40:48Z = 17:40:48 PKT,
+        // so sunset() must round to the nearest minute here - truncating would show 17:39.
+        assertEquals("17:40", SunWindow.sunset(LocalDate.of(2026, 10, 8), home, pkt)
+            .format(DateTimeFormatter.ofPattern("HH:mm")))
     }
 
     @Test fun noonAltitudeMatchesTheKnownValue() {
