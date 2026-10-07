@@ -70,11 +70,8 @@ object SunWindow {
     fun sunset(date: LocalDate, g: GeoPoint, zone: ZoneId): ZonedDateTime {
         val offset = zone.rules.getOffset(java.time.Instant.now()).totalSeconds / 3600.0
         val minutesUtc = sunsetUtcMinutes(date, g, offset)
-        // Truncate, don't round: the validated reference implementation measured the -0.776 deg
-        // sunset-altitude pin (see SunWindowTest) against the truncated minute, and Task 10's
-        // Python mirror truncates too. Rounding 759.5566 to 760 would land 27 s late at -0.988.
         return LocalDateTime.of(date, LocalTime.MIDNIGHT)
-            .plusMinutes(minutesUtc.toLong())
+            .plusMinutes(minutesUtc.roundToInt().toLong())
             .atZone(ZoneId.of("UTC"))
             .withZoneSameInstant(zone)
     }
