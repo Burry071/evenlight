@@ -22,6 +22,19 @@ android {
     testOptions { unitTests.isReturnDefaultValues = true }
 }
 
+// ManifestTest reads the source manifest off disk instead of the merged artifact, so the file is not an
+// inferred input of :app:testDebugUnitTest. Without this declaration an incremental build can report the
+// task UP-TO-DATE right after someone adds a permission, i.e. the guard stops guarding exactly the edit it
+// exists to catch. Path comes from layout.projectDirectory (the :app module dir), never the test JVM's
+// working directory, so the input points at the same file the test reads on every host.
+val sourceManifest = layout.projectDirectory.file("src/main/AndroidManifest.xml")
+
+tasks.withType<Test>().configureEach {
+    inputs.file(sourceManifest)
+        .withPropertyName("evenlightSourceManifest")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+}
+
 dependencies {
     implementation(project(":core"))
     implementation("androidx.core:core-ktx:1.15.0")
