@@ -923,6 +923,15 @@ class VerifierTest {
         }
     }
 
+    @Test fun markupIsTheReasonAndNotAnIncidentalOne() {
+        // Every string in rejectsMarkup also fails a later gate ("<start> brassy" is two words), so deleting
+        // the markup guard leaves them all rejected and the suite green - which would silently drop a reason
+        // category from the wording_rejected/wording_total count Task 11 publishes. These two lines pass
+        // every other rule, so only the guard can reject them.
+        assertEquals(Verdict.Reject("markup"), Verifier.check("brassy light holding (low)", "brassy"))
+        assertEquals(Verdict.Reject("markup"), Verifier.check("brassy light holding #low", "brassy"))
+    }
+
     @Test fun rejectsMoreThanOneLine() {
         assertTrue(Verifier.check("brassy light\nand then", "brassy") is Verdict.Reject)
     }
@@ -949,6 +958,13 @@ class VerifierTest {
         // contract rather than reporting a parsing artifact of ours.
         assertEquals(Verdict.Accept, Verifier.check("brassy, light holding low", "brassy"))
         assertEquals(Verdict.Reject("name absent"), Verifier.check("brassiness holds the low sky", "brassy"))
+    }
+
+    @Test fun anEmbeddedStemIsNotTheName() {
+        // "brassiness" proves the suffix side. This proves the prefix side, and is the only test that dies if
+        // the token match is traded for line.contains(name) - a refactor that would accept "unbrassy" as
+        // carrying the word brassy.
+        assertEquals(Verdict.Reject("name absent"), Verifier.check("unbrassy holds the low sky", "brassy"))
     }
 
     @Test fun rejectsBlankOutput() {
@@ -989,13 +1005,20 @@ object Verifier {
         val words = line.trim().split(Regex("\\s+"))
         if (words.size > 8) return Verdict.Reject("too-long")
         if (words.size < 4) return Verdict.Reject("too-short")
-        if (line.split(Regex("[^a-z]+")).none { it == name }) return Verdict.Reject("name absent")
+        val tokens = line.split(Regex("[^a-z]+"))
+        if (tokens.none { it == name }) return Verdict.Reject("name absent")
         return Verdict.Accept
     }
 }
 ```
 
-- [ ] **Step 4: Run** → PASS, 11 tests. **Step 5: Commit** `git commit -am "feat: wording verifier that cannot let an unmeasured number reach a card"`.
+Note on what `check` does NOT do: a single trailing newline on `line` tallies as `multiline`. That is
+deliberate — the guard is one character wide, and a `\n` anywhere means the model wrote more than one line.
+The caller normalises instead: Task 11's `GemmaWording.line()` already returns `….trim().lowercase()`, so
+surrounding whitespace never reaches `check`, while an interior newline still rejects. Trimming inside the
+verifier would be worse — a whitespace-only output would slide past `blank`.
+
+- [ ] **Step 4: Run** → PASS, 13 tests (42 in `:core`). **Step 5: Commit** `git add core/src/main/kotlin/com/burry071/evenlight/core/Verifier.kt core/src/test/kotlin/com/burry071/evenlight/core/VerifierTest.kt && git commit -m "feat: wording verifier that cannot let an unmeasured number reach a card"` (`git commit -am` stages nothing for these two untracked files).
 
 ---
 
