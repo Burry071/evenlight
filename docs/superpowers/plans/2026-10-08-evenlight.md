@@ -1906,6 +1906,9 @@ class StoreTest {
 
     @Test fun shutterNameIsDateAndTimeToTheMinute() {
         assertEquals("2026-10-08--1759", temp().nextShutterName(LocalDateTime.of(2026, 10, 8, 17, 59, 33)))
+        // Both single-digit cases, because `twoDigit`'s padding branch is otherwise never exercised and dropping
+        // the zero - 09:05 becoming "95" - would still leave the first assertion green.
+        assertEquals("2026-10-08--0905", temp().nextShutterName(LocalDateTime.of(2026, 10, 8, 9, 5)))
     }
 
     @Test fun aSecondShotTheSameEveningIsAttemptTwo() {
@@ -1917,7 +1920,48 @@ class StoreTest {
     }
 
     @Test fun anEveningWithNoRecordIsNotAnEveningWithACard() {
-        assertFalse(temp().eveningsWithCards().contains("2026-10-07"))
+        // Written the other way round this would pass on an empty store whatever eveningsWithCards did, so the
+        // record has to exist first: the distinction under test is record-without-card, not nothing-without-nothing.
+        val store = temp()
+        store.writeRecord(record("2026-10-08"), 1)
+        assertFalse(store.eveningsWithCards().contains("2026-10-08"))
+        store.writeCard("2026-10-08", byteArrayOf(0))
+        assertTrue(store.eveningsWithCards().contains("2026-10-08"))
+        assertFalse(store.eveningsWithCards().contains("2026-10-07"))
+    }
+
+    @Test fun attemptsComeBackInOrderEvenThoughADashSortsBeforeADot() {
+        // recordFile writes "2026-10-08.json" for attempt 1 and "2026-10-08-attempt-2.json" for attempt 2, and '-'
+        // (0x2D) sorts before '.' (0x2E), so sorting by file name alone hands Task 9's stack and Task 10's
+        // "latest attempt wins" the attempts backwards. Sort by the (date, attempt) the NAME asserts.
+        val store = temp()
+        store.writeRecord(record("2026-10-08"), 1)
+        store.writeRecord(record("2026-10-08"), 2)
+        assertEquals(listOf(1, 2), store.readRecords().map { it.attempt })
+    }
+
+    @Test fun aBodyThatContradictsItsFileNameStillSortsByItsFileName() {
+        // decode defaults a missing `attempt` to 1, so a file named attempt-2 whose body says 1 would tie with the
+        // real attempt 1 if the sort key came from the decoded record - and sortedBy is stable, so the winner would
+        // be whatever order listFiles() happened to return. The name is what recordFile wrote; the name decides.
+        // The two bodies are made distinguishable by their `name`, since their `attempt` fields are deliberately
+        // identical: the one in the attempt-2 FILE must come back last even though it claims to be attempt 1.
+        val store = temp()
+        store.writeRecord(record("2026-10-08").copy(name = "from-the-bare-file"), 1)
+        File(store.root, "evenlight/records/2026-10-08-attempt-2.json")
+            .writeText(record("2026-10-08").copy(name = "from-the-named-file").encode())
+        val read = store.readRecords()
+        assertEquals("a decoded record must never be dropped, whatever its body claims", 2, read.size)
+        assertEquals("from-the-bare-file", read.first().name)
+        assertEquals("from-the-named-file", read.last().name)
+    }
+
+    @Test fun attemptOneIsTheBareDateFileAndAttemptThreeIsNamed() {
+        // The naming convention is what eveningsWithCards and Task 10 both read; without this assertion the
+        // `attempt <= 1` branch could become `< 1` and every test above would still pass.
+        val store = temp()
+        assertEquals("2026-10-08.json", store.recordFile("2026-10-08", 1).name)
+        assertEquals("2026-10-08-attempt-3.json", store.recordFile("2026-10-08", 3).name)
     }
 
     @Test fun corruptRecordsAreCountedNotDeleted() {
@@ -2073,7 +2117,23 @@ class Store(val root: File) {
     }
 
     fun readRecords(): List<EveningRecord> =
-        records.listFiles()?.sortedBy { it.name }?.map { decodeOrNull(it) }?.filterNotNull() ?: emptyList()
+        records.listFiles()?.mapNotNull { f -> decodeOrNull(f)?.let { f to it } }
+            ?.sortedWith(compareBy({ orderOf(it.first.name).first }, { orderOf(it.first.name).second }))
+            ?.map { it.second } ?: emptyList()
+
+    /**
+     * The (date, attempt) a filename asserts. Ordering comes from the NAME because the name is what recordFile
+     * wrote: sorting by the decoded pair instead would let a body whose `attempt` field is missing - decode defaults
+     * it to 1 - or whose `date` was edited outside the app decide the stack's order, and `sortedBy` being stable
+     * would leave those ties in whatever order listFiles() happened to return. Nothing here filters: a file that
+     * decodes is a record and shows up, and an evening that vanishes from this list is the exact failure this
+     * store exists to prevent.
+     */
+    private fun orderOf(name: String): Pair<String, Int> {
+        val base = name.removeSuffix(".json")
+        val i = base.indexOf("-attempt-")
+        return if (i < 0) base to 1 else base.substring(0, i) to (base.substring(i + 9).toIntOrNull() ?: 1)
+    }
 
     fun corruptRecords(): Int = records.listFiles()?.count {
         it.name.endsWith(".json") && decodeOrNull(it) == null
@@ -2154,8 +2214,8 @@ graphics types — move `data class Header(...)` out of `CardRenderer.kt` into t
 the right shape anyway (a value type with no Android dependency does not belong nested in the one class that has
 four); it is not the first choice only because Task 7 is closed and reviewed.
 
-- [ ] **Step 4: Run** → PASS, 8 tests in `StoreTest` and 2 in `CardHeaderTest` (`:app` unit total 13, with the 3
-  pre-existing `ManifestTest`). `SampleSizeTest` arrives with Step 5, taking the `:app` total to 15.
+- [ ] **Step 4: Run** → PASS, 11 tests in `StoreTest` and 2 in `CardHeaderTest` (`:app` unit total 16, with the 3
+  pre-existing `ManifestTest`). `SampleSizeTest` arrives with Step 5, taking the `:app` total to 18.
 
 - [ ] **Step 5: Implement `FrameSource.kt`.** CameraX, back camera, one still, rotation applied by hand so `:core` never sees an Android image type. `BitmapFactory` does **not** apply EXIF, so rotate explicitly.
 
@@ -2223,8 +2283,14 @@ class FrameSource(private val context: Context, private val executor: Executor) 
         provider.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, preview, imageCapture)
     }
 
+    /**
+     * A camera failure is thrown, not folded into an empty `Still`: `shoot()` is wrapped in `runCatching`, so the
+     * exception reaches the screen as its own message. Returning an empty frame instead would make permission
+     * revocation, a missing camera and an encoding failure all read "capture produced no pixels" - on a step whose
+     * entire purpose is a failure legible without logcat.
+     */
     suspend fun take(rotationDegrees: Int): Still {
-        val capture = imageCapture ?: return Still(IntArray(0), 0, 0, ByteArray(0))
+        val capture = imageCapture ?: throw IllegalStateException("camera not bound yet")
         val target = File(context.cacheDir, "shot.jpg")
         val jpeg = suspendCoroutine { cont ->
             val options = ImageCapture.OutputFileOptions.Builder(target).build()
@@ -2232,10 +2298,12 @@ class FrameSource(private val context: Context, private val executor: Executor) 
                 override fun onImageSaved(o: ImageCapture.OutputFileResults) {
                     cont.resume(if (target.exists()) target.readBytes() else ByteArray(0))
                 }
-                override fun onError(exc: ImageCaptureException) { cont.resume(ByteArray(0)) }
+                override fun onError(exc: ImageCaptureException) {
+                    cont.resumeWith(Result.failure(IllegalStateException("capture failed: ${exc.imageCaptureError}", exc)))
+                }
             })
         }
-        if (jpeg.isEmpty()) return Still(IntArray(0), 0, 0, jpeg)
+        if (jpeg.isEmpty()) throw IllegalStateException("capture wrote an empty file")
         return decode(jpeg, rotationDegrees)
     }
 
@@ -2330,6 +2398,7 @@ import com.burry071.evenlight.core.SunWindow
 import com.burry071.evenlight.data.Settings
 import com.burry071.evenlight.data.Store
 import com.burry071.evenlight.wording.Wording
+import kotlinx.coroutines.CancellationException
 import java.io.ByteArrayOutputStream
 import java.time.Duration
 import java.time.LocalDateTime
@@ -2359,10 +2428,15 @@ class EvenlightController(
 ) {
 
     /**
-     * Narrowest wall-clock guard this task can justify: the two reads bracket one shutter press, so a jump *during*
-     * the capture - an NTP correction landing at 17:59 - is caught, and a clock rewound last Tuesday is not. What
-     * actually defends the stack's order against a rewound clock is the shutter name stored in every record; this
-     * flag marks the row rather than silently reordering it (spec section 11).
+     * Two reads of one wall clock around one shutter press, so what this catches is a jump that lands *during* the
+     * capture - an NTP correction at 17:59 - and what it cannot catch is a clock rewound last Tuesday. What
+     * actually defends the stack's order against that is the shutter name stored in every record; this flag marks
+     * the row rather than silently reordering it (spec section 11).
+     *
+     * A third thing trips it, and pretending otherwise would be a false claim in a comment: System.nanoTime() is
+     * CLOCK_MONOTONIC and does not advance while the device sleeps, while LocalDateTime.now() does. A phone that
+     * dozed between the two reads shows wall time gone by and monotonic time not, and the row is marked suspect
+     * for a reason that is not a clock fault. That is acceptable because the flag is a mark, not a diagnosis.
      */
     private fun clockSuspect(now: LocalDateTime, monoBefore: Long): Boolean {
         val wallAdvance = Duration.between(now, time.wallClock()).toMillis()
@@ -2370,7 +2444,8 @@ class EvenlightController(
         return wallAdvance < 0 || abs(wallAdvance - monoAdvance) > 5_000
     }
 
-    suspend fun shoot(): Result<EveningRecord> = runCatching {
+    suspend fun shoot(): Result<EveningRecord> {
+        val outcome = runCatching {
         // No coordinates, no card. The sun line would otherwise print an altitude computed for the Gulf of Guinea
         // over a sky in Lahore: a number the app did not measure, which this project does not put on a card.
         check(settings.isSet) { "no place set yet" }
@@ -2405,10 +2480,17 @@ class EvenlightController(
             attempt = attempt,
             clockSuspect = suspect
         )
-        store.writeRaw(still.jpeg, record.shutter, attempt)
-        store.writeRecord(record, attempt)              // record BEFORE render: a render failure must not lose the evening
-        store.writeCard(date, pngBytes(renderer.render(bands.ordered, headerFor(record, match))))
-        record
+            store.writeRecord(record, attempt)          // the record leads: it is the datum, and no later failure may lose it
+            store.writeRaw(still.jpeg, record.shutter, attempt)
+            store.writeCard(date, pngBytes(renderer.render(bands.ordered, headerFor(record, match))))
+            record
+        }
+        // runCatching catches Throwable, which is what a shutter crash needs - but that includes the coroutine's own
+        // cancellation, which would otherwise become a failed Result a destroyed window is then asked to draw into.
+        // So cancellation travels back up and everything else is reported. Task 9 inherits this file, and a
+        // coroutine that swallows its own cancellation stops being obvious once it is load-bearing.
+        outcome.exceptionOrNull()?.let { if (it is CancellationException) throw it }
+        return outcome
     }
 
     private fun pngBytes(bmp: Bitmap): ByteArray {
