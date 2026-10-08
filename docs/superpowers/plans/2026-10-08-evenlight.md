@@ -1063,6 +1063,35 @@ class JsonTest {
         assertNull(Json.tryParse("{"))
         assertNull(Json.tryParse("[1,]"))
     }
+
+    @Test fun nullIsNotSilentlyAnEmptyString() {
+        // This codec has no Json.Null case, so `null` has nowhere honest to land. Mapping it to Str("") - what
+        // an earlier draft of this plan did - made a record file containing `"wording": null` decode into a
+        // record with an empty wording instead of failing, which is invented data at the far edge of the
+        // pipeline. `null` is therefore not in this grammar: it falls through to number(), consumes no
+        // characters, and throws. Python's json.load reads such a file happily; the app must not.
+        assertNull(Json.tryParse("null"))
+        assertNull(Json.tryParse("{\"wording\":null}"))
+    }
+
+    @Test fun rejectsAPlusPrefixedNumber() {
+        // `+1.5` is not JSON, and Python's json.load rejects it. The parser's job is to agree with the reader
+        // that shares these files, so a leading plus is a malformed number, not a positive one.
+        assertNull(Json.tryParse("+1.5"))
+        assertEquals(Json.Num(1.5), Json.tryParse("1.5"))
+    }
+
+    @Test fun controlCharactersSurviveARoundTrip() {
+        // The escape branch that no other test reaches: every named escape (newline, tab, carriage return) has
+        // its own case, so a string carrying a bare control character used the four-hex-digit branch with no
+        // coverage at all. Checked on this JDK before keeping the format string there: under an ar-EG locale
+        // `%04d` printed non-ASCII digits while `%04x` printed ASCII `00ff`, so hex output is not
+        // locale-parameterised the way decimal output is - this escape stays a pure function of its input.
+        // The branch is load-bearing, so it is now pinned.
+        val s = Json.Str("a\u0001b\u001Fc")
+        assertEquals(s, Json.tryParse(Json.encode(s)))
+        assertEquals("\"a\\u0001b\\u001fc\"", Json.encode(s))
+    }
 }
 ```
 
@@ -1070,6 +1099,7 @@ class JsonTest {
 package com.burry071.evenlight.core
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -1097,6 +1127,15 @@ class EveningRecordTest {
 
     @Test fun truncatedFileDecodesToNullInsteadOfThrowing() {
         assertNull(EveningRecord.decode(sample.encode().take(40)))
+    }
+
+    @Test fun aNullFieldFailsTheDecodeRatherThanInventingAValue() {
+        // The record-level consequence of Json having no Null case. Substituting the enum's own deterministic
+        // output keeps this honest: a file a hand-editor (or another tool) turned `"model"` into `null` must be
+        // refused, not read back as an empty wording_source.
+        val corrupted = sample.encode().replace("\"wording_source\":\"model\"", "\"wording_source\":null")
+        assertNotEquals(sample.encode(), corrupted)
+        assertNull(EveningRecord.decode(corrupted))
     }
 }
 ```
@@ -1177,7 +1216,8 @@ private class Parser(private val s: String) {
             '"' -> Json.Str(string())
             't' -> literal("true") { Json.Bool(true) }
             'f' -> literal("false") { Json.Bool(false) }
-            'n' -> literal("null") { Json.Str("") }
+            // No 'n' case on purpose. This codec cannot write null, so a file containing one was not written
+            // by us; `null` falls through to number(), which consumes nothing and throws. See the test.
             else -> number()
         }
     }
@@ -1190,7 +1230,11 @@ private class Parser(private val s: String) {
 
     private fun number(): Json {
         val start = i
-        if (i < s.length && (s[i] == '-' || s[i] == '+')) i++
+        if (i < s.length && s[i] == '-') i++
+        // Without this guard the scan below happily starts on a `+`, because `+` has to be legal inside an
+        // exponent (`1e+5`) - so `+1.5` would parse, while Python's json.load rejects it. A number must begin
+        // with a digit or a minus, and this says so before the permissive scan runs.
+        require(i < s.length && s[i].isDigit()) { "number must start with a digit" }
         while (i < s.length && (s[i].isDigit() || s[i] in ".eE+-")) i++
         return Json.Num(s.substring(start, i).toDouble())
     }
@@ -1326,7 +1370,7 @@ data class EveningRecord(
 }
 ```
 
-- [ ] **Step 5: Run both classes** (`--tests "*JsonTest*" --tests "*EveningRecordTest*"`) → PASS, 8 tests. **Step 6: Commit** `git commit -am "feat: dependency-free JSON codec and the evening record"`.
+- [ ] **Step 5: Run both classes** (`--tests "*JsonTest*" --tests "*EveningRecordTest*"`) → PASS, 12 tests (7 + 5), 54 in `:core`. **Step 6: Commit** `git add core/src/main/kotlin/com/burry071/evenlight/core/Json.kt core/src/main/kotlin/com/burry071/evenlight/core/EveningRecord.kt core/src/test/kotlin/com/burry071/evenlight/core/JsonTest.kt core/src/test/kotlin/com/burry071/evenlight/core/EveningRecordTest.kt && git commit -m "feat: dependency-free JSON codec and the evening record"` (`git commit -am` stages nothing for four untracked files).
 
 ---
 
