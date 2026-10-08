@@ -85,10 +85,10 @@ class StoreTest {
         // `2026-10-08-attempt-abc.json` parses to attempt 1, tying with the real bare-date file. Without the
         // filename as the comparator's third key that tie is settled by listFiles() order, so Task 10's
         // "latest attempt wins" would depend on the filesystem - which is the nondeterminism this store is
-        // supposed to have removed. What this assertion pins is the ORDER THE NAME IMPLIES. Whether it also kills
-        // the mutant "third key deleted" depends on what listFiles() happens to return on this filesystem, so the
-        // fix round must run that mutation and report which it got; claiming teeth without watching it fail is
-        // the mistake this project has now been warned about five times.
+        // supposed to have removed. What this assertion pins is the ORDER THE NAME IMPLIES: '-' is 0x2D and '.'
+        // is 0x2E, so "2026-10-08-attempt-abc" comes before "2026-10-08.json". Fix round 2 deleted the third
+        // comparator key and this test still passed, because this host's listFiles() returned the attempt-abc
+        // file first anyway. It documents the order; it does not prove the third key is load-bearing.
         val store = temp()
         store.writeRecord(record("2026-10-08").copy(name = "bare"), 1)
         File(store.root, "evenlight/records/2026-10-08-attempt-abc.json")
