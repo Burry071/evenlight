@@ -45,6 +45,10 @@ class MainActivity : ComponentActivity() {
         preview = PreviewView(this)
         val shoot = Button(this).apply { text = "Shoot" }
         setContentView(LinearLayout(this).apply {
+            // VERTICAL is load-bearing, not cosmetic: a LinearLayout defaults to HORIZONTAL, where the preview's
+            // (0, 0, weight 1) means "zero width, zero height, take the leftover WIDTH" - a collapsed view that
+            // never shows a frame to aim by. CameraX still captures, which is why Step 7 passed without noticing.
+            orientation = LinearLayout.VERTICAL
             addView(preview, LinearLayout.LayoutParams(0, 0, 1f))
             addView(shoot, LinearLayout.LayoutParams(-1, -2))
         })

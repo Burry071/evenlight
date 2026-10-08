@@ -89,7 +89,13 @@ class FrameSource(private val context: Context, private val executor: Executor) 
             return Still(px, w, h, jpeg)
         }
 
-        /** Display rotation -> the degrees the decoded bitmap must be turned to stand up. Unverified until Step 7. */
+        /**
+         * Display rotation -> the degrees the decoded bitmap must be turned to stand up. The `0 -> 90` row is now
+         * measured rather than assumed: the JPEG on the device carried EXIF orientation 6 (rotate 90 CW to display)
+         * and re-deriving the band means from that file matched the stored bands only under a clockwise 90. The
+         * other three rows are still a table nobody has exercised - the device was never rotated off its natural
+         * orientation, so 1, 2 and 3 remain hypotheses.
+         */
         fun rotationFor(displayRotation: Int): Int = when (displayRotation) {
             0 -> 90; 1 -> 0; 2 -> 180; else -> 270
         }
