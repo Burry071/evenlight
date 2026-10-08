@@ -1858,7 +1858,7 @@ This task must land tonight; every day of slippage costs the record an evening.
   - `class FrameSource(context: Context, executor: Executor) { var imageCapture: ImageCapture?; fun start(provider, previewView, lifecycleOwner); suspend fun take(rotationDegrees: Int): Still }`, `data class Still(val pixels: IntArray, val width: Int, val height: Int, val jpeg: ByteArray)`, top-level `fun sampleSize(width: Int, height: Int): Int` and `const val MAX_SAMPLE_EDGE` in the same file
   - `object Wording { fun template(name: String): String }` — `"$name light, measured from this sky"`, identical to the line T11 ships
   - `fun headerFor(record: EveningRecord, match: Match): CardRenderer.Header` — top level in `card/CardHeader.kt`, **no Android imports in that file**
-  - `class EvenlightController(context, store, settings, frame, renderer, time: Timebase, displayRotation: () -> Int) { suspend fun shoot(): Result<EveningRecord> }`, `class Timebase(val wallClock: () -> LocalDateTime, val monotonicMillis: () -> Long)` with `Timebase.SYSTEM`
+  - `class EvenlightController(store, settings, frame, renderer, time: Timebase, displayRotation: () -> Int) { suspend fun shoot(): Result<EveningRecord> }` with `companion object { fun forDevice(activity: Context, store, settings, frame) }`, `class Timebase(val wallClock: () -> LocalDateTime, val monotonicMillis: () -> Long)` with `Timebase.SYSTEM`
 
 **Pre-flight rulings that change the task text below** (all were defects in the plan as written; the Ruling numbers are the ledger's):
 
