@@ -79,7 +79,7 @@ evenlight/                       repo root = the current workspace
 │  └─ ui/theme/{Color,Type,Theme}.kt  ui/{Tonight,Shoot,Card,Stack,Setup}Screen.kt
 │                                    ui/FramingGuide.kt          T9
 ├─ tools/python/{skycard.py,test_skycard.py}                     T10
-├─ fixtures/{make_fixtures.py,sky_ramp.png,sky_blocks.png,sky_wide.png,*.bands.json}  T10
+├─ fixtures/{make_fixtures.py,sky_ramp.png,sky_blocks.png,sky_wide.png,sky_narrow.png,*.bands.json}  T10
 ├─ models/GET_MODEL.md  README.md  LICENSE                       T12
 └─ design/evenlight-mockups.html  (exists — the visual source of truth)
 ```
@@ -510,7 +510,7 @@ object SunWindow {
 
 **Interfaces:**
 - Produces:
-  - `object Pixels { r(c) g(c) b(c): Int; rgb(r,g,b): Int; hex(c): String; parseHex(s): Int; relativeLuminance(c): Double; luma(c): Int; roundHalfUp(v: Double): Int }` — colours are packed `0x00RRGGBB` ints everywhere in `:core`.
+  - `object Pixels { r(c) g(c) b(c): Int; rgb(r,g,b): Int; hex(c): String; parseHex(s): Int; relativeLuminance(c): Double; roundHalfUp(v: Double): Int }` — colours are packed `0x00RRGGBB` ints everywhere in `:core`. `hex` builds its string from an explicit ASCII digit table, never a locale-resolved format: Task 8 persists that exact string and Task 10 diffs it against Python's ASCII `%02X`. There is deliberately no `luma()` — a second luminance formula with `roundToInt` would invite a caller to mix rounding conventions.
   - `data class Bands(val ordered: List<Int>, val meanLuminance: Double)` — `ordered.size == 8`, index 0 is the **top** of the frame.
   - `object BandSampler { const val TARGET_WIDTH = 64; const val BAND_COUNT = 8; fun sample(pixels: IntArray, width: Int, height: Int): Bands }`
 - Consumed by: Tasks 4, 7, 8, and 10 — **this signature is the cross-language contract.**
@@ -536,7 +536,7 @@ class BandSamplerTest {
         val v = (0 until 8).map { Pixels.rgb(10 + it * 20, 200 - it * 10, 30 + it * 5) }
         val bands = BandSampler.sample(rows(64, v), 64, 8)
         assertEquals(v, bands.ordered)
-        assertEquals("#1EC823", Pixels.hex(bands.ordered[1]))
+        assertEquals("#1EBE23", Pixels.hex(bands.ordered[1]))  // rgb(30,190,35): 190 = 0xBE, not 0xC8
     }
 
     @Test fun topOfFrameIsBandZero() {
@@ -609,8 +609,6 @@ object Pixels {
         return 0.2126 * lin(r(c)) + 0.7152 * lin(g(c)) + 0.0722 * lin(b(c))
     }
 
-    fun luma(c: Int): Int = (0.299 * r(c) + 0.587 * g(c) + 0.114 * b(c)).roundToInt()
-
     /** Round-half-up. Python mirrors this with floor(x + 0.5); do NOT use banker's rounding. */
     fun roundHalfUp(v: Double): Int = Math.floor(v + 0.5).toInt()
 }
@@ -634,7 +632,11 @@ object BandSampler {
     fun sample(pixels: IntArray, width: Int, height: Int): Bands {
         require(pixels.size == width * height) { "expected ${width * height} pixels, got ${pixels.size}" }
         val dw = TARGET_WIDTH
-        val dh = max(1, Pixels.roundHalfUp(height.toDouble() * dw / width))
+        // The min(height, ...) clamp is load-bearing: width < TARGET_WIDTH makes height*dw/width > height,
+        // and dh > height means the bilinear pass INVENTS interpolated rows instead of repeating the
+        // nearest source row. It is the identity for every width >= 64, so the downscale path Python
+        // mirrors (Task 10) is bit-for-bit unchanged. fixtures/sky_narrow.png is the only <64 case.
+        val dh = max(1, min(height, Pixels.roundHalfUp(height.toDouble() * dw / width)))
         val small = bilinear(pixels, width, height, dw, dh)
 
         var lumSum = 0.0
@@ -1891,7 +1893,7 @@ Difference-blend white renders as the inverse of whatever is underneath, which i
 
 This is the demo: a reviewer cannot live on a Lahore balcony for a week, but they can turn their own sky photo into a card in under a minute.
 
-**Files:** Create `tools/python/skycard.py`, `tools/python/test_skycard.py`, `fixtures/make_fixtures.py`; generate `fixtures/{sky_ramp,sky_blocks,sky_wide}.png` and `fixtures/*.bands.json`; Test `core/src/test/kotlin/.../FixtureEquivalenceTest.kt`
+**Files:** Create `tools/python/skycard.py`, `tools/python/test_skycard.py`, `fixtures/make_fixtures.py`; generate `fixtures/{sky_ramp,sky_blocks,sky_wide,sky_narrow}.png` and `fixtures/*.bands.json`; Test `core/src/test/kotlin/.../FixtureEquivalenceTest.kt`
 
 **Interfaces:**
 - Consumes: the exact arithmetic of `BandSampler` (T3), `Matcher` (T4), `CardGeometry` (T7).
@@ -1925,7 +1927,19 @@ def wide():
     img.paste((200, 150, 60), (0, 80, 100, 100))
     return img
 
-for name, img in (("sky_ramp", ramp()), ("sky_blocks", blocks()), ("sky_wide", wide())):
+def narrow():
+    # 32 x 6: the ONLY fixture with width < TARGET_WIDTH. In BandSampler/sample, dh would be
+    # round_half_up(6*64/32) = 12 > the 6 source rows, so without the clamp both languages interpolate
+    # rows that do not exist. Clamped to dh = 6, the eight bands repeat source rows as
+    # r0,r0,r1,r2,r3,r3,r4,r5. Every other fixture is >= 64 px wide, where the clamp is the identity -
+    # which is exactly why this one exists: it is the only thing that pins the clause cross-language.
+    img = Image.new("RGB", (32, 6))
+    for y in range(6):
+        img.paste((10 + y * 40, 250 - y * 35, 20 + y * 15), (0, y, 32, y + 1))
+    return img
+
+for name, img in (("sky_ramp", ramp()), ("sky_blocks", blocks()), ("sky_wide", wide()),
+                  ("sky_narrow", narrow())):
     img.save(os.path.join(HERE, "..", "..", "fixtures", name + ".png"))
 ```
 
@@ -1950,7 +1964,7 @@ class FixtureEquivalenceTest {
     private val write = System.getProperty("evenlight.writeFixtures") == "true"
 
     @Test fun fixturesProduceThePinnedBands() {
-        for (n in listOf("sky_ramp", "sky_blocks", "sky_wide")) {
+        for (n in listOf("sky_ramp", "sky_blocks", "sky_wide", "sky_narrow")) {
             val img = ImageIO.read(File(dir, "$n.png"))
             val px = IntArray(img.width * img.height)
             img.getRGB(0, 0, img.width, img.height, px, 0, img.width)
@@ -2022,7 +2036,9 @@ def bilinear(src, sw, sh, dw, dh):
 
 def sample(src, width, height):
     dw = TARGET_WIDTH
-    dh = max(1, round_half_up(height * dw / width))
+    # min(height, ...) mirrors BandSampler.kt: without it, width < TARGET_WIDTH makes dh exceed the
+    # source row count and the bilinear pass invents rows. Identity for width >= 64; sky_narrow pins it.
+    dh = max(1, min(height, round_half_up(height * dw / width)))
     small = bilinear(src, width, height, dw, dh)
     bands = []
     for i in range(BAND_COUNT):
@@ -2084,7 +2100,7 @@ FIX = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "fixt
 
 class Equivalence(unittest.TestCase):
     def test_bands_match_the_kotlin_goldens(self):
-        for name in ("sky_ramp", "sky_blocks", "sky_wide"):
+        for name in ("sky_ramp", "sky_blocks", "sky_wide", "sky_narrow"):
             with self.subTest(name):
                 expected = json.load(open(os.path.join(FIX, name + ".bands.json")))["bands"]
                 self.assertEqual([s.upper() for s in expected], [s.upper() for s in skycard.bands_for(os.path.join(FIX, name + ".png"))])
