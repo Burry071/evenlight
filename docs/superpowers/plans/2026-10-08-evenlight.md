@@ -43,6 +43,7 @@ Every task's requirements include this section.
 - Fonts are bundled TTFs in `res/font/` (Fraunces variable, Instrument Sans variable, both SIL OFL). Downloadable-font APIs are forbidden — no network.
 - Build from the repo root with the cached Gradle: `/c/Users/User/.gradle/wrapper/dists/gradle-8.8-bin/dl7vupf4psengwqhwktix4v1/gradle-8.8/bin/gradle.bat`. Prefix `adb` remote paths with `MSYS_NO_PATHCONV=1`. Python is `/f/Ancoda/python.exe`.
 - **Commits are local only.** `git push` and creating `Burry071/evenlight` need an explicit go-ahead (Task 12).
+- **Commit steps written as `git commit -am` are shorthand, not an instruction.** `-a` stages only paths Git already tracks, so a task that creates new files commits nothing (or, worse, commits its edits to existing files while silently dropping the new ones) and still exits 0. Always stage explicit paths, then confirm with `git status --short` that nothing the task created is left untracked before reporting the commit.
 
 ### Checkpoint before Task 1 step 6 — cleared
 
@@ -1503,7 +1504,7 @@ data class EveningRecord(
 **Interfaces:**
 - Produces: `object Palette` (packed ARGB ints, listed in Global Constraints);
   `data class CardGeometry(val width: Int = 1080, val height: Int = 1440)` with `fieldHeight: Int`, `paperTop: Int`, `bandHeight: Double`, `stripHeight: Int`, `stripTop: Int`, `bandCentreY(i): Double`, `fieldBlend(y: Int): Float`, `inkOn(band: Int): Int`, `blendOf(bands: List<Int>, blend: Float): Int`;
-  `class CardRenderer(displayFont: Typeface, textFont: Typeface) { fun render(bands: List<Int>, header: Header): Bitmap }` with `data class Header(name, dateLabel, sunAltitudeDeg, wording, neighbours: List<Int>, night: Boolean)`.
+  `class CardRenderer(displayFont: Typeface, textFont: Typeface) { fun render(bands: List<Int>, header: Header): Bitmap }` with `data class Header(name, dateLabel, sunAltitudeDeg, wording, winnerIndex: Int, neighbours: List<Int>, night: Boolean)`.
 - Consumed by: Tasks 8, 9, 10 (Python mirrors the same numbers).
 
 - [ ] **Step 1: Write the failing test.** The colour rules are asserted here because they are the ones that could silently fake a hue.
@@ -1543,11 +1544,17 @@ class CardGeometryTest {
         assertEquals(2.5f, g.fieldBlend(mid), 0.02f)
     }
 
-    @Test fun blendOfTwoBandsAtTheEndsIsTheEndsAndTheMidpoint() {
-        val b = List(8) { Pixels.rgb(0, 0, 0) }.toMutableList().also { it[0] = Pixels.rgb(0, 0, 0); it[1] = Pixels.rgb(200, 100, 40) }
+    @Test fun blendingTwoBandsAveragesTheChannelsAndRoundsHalfUp() {
+        val b = MutableList(8) { Pixels.rgb(0, 0, 0) }.also { it[1] = Pixels.rgb(200, 100, 40) }
         assertEquals(Pixels.rgb(0, 0, 0), g.blendOf(b, 0f))
         assertEquals(Pixels.rgb(200, 100, 40), g.blendOf(b, 1f))
         assertEquals(Pixels.rgb(100, 50, 20), g.blendOf(b, 0.5f))
+        // The three cases above average to exact integers, so none of them exercises a rounding rule. Odd
+        // channels land the average on exactly .5, which is where Kotlin and Python can part company: half-up
+        // gives 101/51/21, banker's rounding gives 100/50/20. Task 10 mirrors this line in Python, so the tie
+        // direction is cross-language contract, not local style.
+        val odd = MutableList(8) { Pixels.rgb(0, 0, 0) }.also { it[1] = Pixels.rgb(201, 101, 41) }
+        assertEquals(Pixels.rgb(101, 51, 21), g.blendOf(odd, 0.5f))
     }
 
     @Test fun aDarkWinnerStripCarriesPaper() {
@@ -1570,12 +1577,52 @@ class CardGeometryTest {
     @Test fun aSmallerCardKeepsTheSameProportions() {
         assertEquals(446, CardGeometry(540, 720).fieldHeight)   // 0.62 * 720 = 446.4 -> half-up
     }
+
+    @Test fun theCardIsTheArtefactSizeAndTheFieldIsEightBands() {
+        // 1080x1440 is the exported artefact, and `bandHeight` is what every centre and blend is built from.
+        // Neither is asserted anywhere else, so a default changed in either direction reads as a style tweak.
+        assertEquals(1080, g.width)
+        assertEquals(1440, g.height)
+        assertEquals(893 / 8.0, g.bandHeight, 1e-9)
+    }
+
+    @Test fun theWinnerStripIsTheBottomOfTheField() {
+        // 96 px at a 1440 card is the mockup's number, and the strip is where a measured colour is shown
+        // unmixed - so its geometry is a colour-honesty fact, not a layout nicety. Nothing else pins it.
+        assertEquals(96, g.stripHeight)
+        assertEquals(797, g.stripTop)
+        assertEquals(g.fieldHeight - g.stripHeight, g.stripTop)
+    }
+
+    @Test fun theInkThresholdIsExactlyWhereTheDesignSays() {
+        // The two colours in the tests above sit at 0.287 and 0.73 luminance, so any threshold between them
+        // passes - which means 0.45 itself is unpoliced. Grey 178 is 0.4452 and grey 179 is 0.4508, so these
+        // four lines pin the boundary to within one grey level.
+        assertTrue(Pixels.relativeLuminance(Pixels.rgb(178, 178, 178)) < 0.45)
+        assertTrue(Pixels.relativeLuminance(Pixels.rgb(179, 179, 179)) > 0.45)
+        assertEquals(Palette.PAPER, g.inkOn(Pixels.rgb(178, 178, 178)))
+        assertEquals(Palette.INK, g.inkOn(Pixels.rgb(179, 179, 179)))
+    }
+
+    @Test fun thePaletteIsTheDesignSystemVerbatim() {
+        // The app's chrome reads these constants, not the hex literals in the design system, so a mistyped
+        // digit here is invisible to every other test - and a brand hue leaking into chrome is the failure
+        // the spec forbids. Pinned as packed ARGB, including the alpha, because 0xF4EFE6 would compile too.
+        assertEquals(0xFFF4EFE6.toInt(), Palette.PAPER)
+        assertEquals(0xFFFBF8F2.toInt(), Palette.CARD)
+        assertEquals(0xFF2A2622.toInt(), Palette.INK)
+        assertEquals(0xFF6E6656.toInt(), Palette.MUTED)
+        assertEquals(0xFFD9D0BF.toInt(), Palette.HAIRLINE)
+        assertEquals(0xFF17150F.toInt(), Palette.NIGHT_SURFACE)
+        assertEquals(0xFFE9E3D6.toInt(), Palette.NIGHT_TEXT)
+        assertEquals(0xFF332F26.toInt(), Palette.NIGHT_HAIRLINE)
+    }
 }
 ```
 
 - [ ] **Step 2: Run** → FAIL, unresolved `CardGeometry`.
 
-- [ ] **Step 3: Implement `CardGeometry.kt`.**
+- [ ] **Step 3: Implement `CardGeometry.kt`.** Keep all eight constants: `HAIRLINE` is the only one this task's renderer does not read, and it is consumed by Task 9's Compose theme (`Color(Palette.HAIRLINE)`), so "unused here" is not dead code and deleting it would break that task's build.
 
 ```kotlin
 package com.burry071.evenlight.core
@@ -1639,7 +1686,7 @@ data class CardGeometry(val width: Int = 1080, val height: Int = 1440) {
 }
 ```
 
-- [ ] **Step 4: Run** → PASS, 10 tests.
+- [ ] **Step 4: Run** → PASS, 14 tests (`:core` total 79).
 
 - [ ] **Step 5: Implement `CardRenderer.kt`.** It draws; it does not decide. There is no saturation, contrast, tint, or white-balance call in this file, and adding one breaks the project's premise.
 
@@ -1651,9 +1698,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Typeface
 import com.burry071.evenlight.core.CardGeometry
-import com.burry071.evenlight.core.Matcher
 import com.burry071.evenlight.core.Palette
-import com.burry071.evenlight.core.Pixels
 
 class CardRenderer(private val displayFont: Typeface, private val textFont: Typeface) {
 
@@ -1662,6 +1707,7 @@ class CardRenderer(private val displayFont: Typeface, private val textFont: Type
         val dateLabel: String,
         val sunAltitudeDeg: Int,
         val wording: String,
+        val winnerIndex: Int,
         val neighbours: List<Int>,
         val night: Boolean = false
     )
@@ -1682,7 +1728,11 @@ class CardRenderer(private val displayFont: Typeface, private val textFont: Type
             c.drawLine(0f, y.toFloat(), geo.width.toFloat(), y.toFloat(), p)
         }
 
-        val winner = bands[Matcher.winner(bands)]
+        // The winner comes in on the header rather than being recomputed here, because the record stores
+        // `winner` and Task 10 re-derives cards in Python from that stored field. A renderer that decided for
+        // itself could draw a strip that disagrees with the record it was built from - which is the one drift
+        // this file exists to prevent, and "it draws, it does not decide" means exactly this line.
+        val winner = bands[header.winnerIndex]
         p.color = winner
         c.drawRect(0f, geo.stripTop.toFloat(), geo.width.toFloat(), geo.fieldHeight.toFloat(), p)
         p.color = geo.inkOn(winner)
@@ -1725,7 +1775,7 @@ class CardRenderer(private val displayFont: Typeface, private val textFont: Type
 
 - [ ] **Step 6: Do not fake a unit test for this.** `Bitmap`/`Canvas` have no JVM implementation; the render path is verified by the scripted emulator pass in Task 8 step 7, where the PNG is pulled and looked at.
 
-- [ ] **Step 7: Commit** `git commit -am "feat: card geometry as pure numbers plus the Canvas renderer"`.
+- [ ] **Step 7: Commit** with explicit paths — `git add core/src/main/kotlin/com/burry071/evenlight/core/CardGeometry.kt core/src/test/kotlin/com/burry071/evenlight/core/CardGeometryTest.kt app/src/main/java/com/burry071/evenlight/card/CardRenderer.kt && git commit -m "feat: card geometry as pure numbers plus the Canvas renderer"`. Do not use `git commit -am` here: all three files are new, and `-a` only stages modifications to already-tracked paths, so it would commit nothing and report success.
 
 ---
 
