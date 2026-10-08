@@ -1568,6 +1568,18 @@ class CardGeometryTest {
         assertEquals(Palette.opaque(Pixels.rgb(101, 51, 21)), g.blendOf(odd, 0.5))
     }
 
+    @Test fun aRowThatBlendsOntoTheExactHalfKeepsItInBinary64() {
+        // Row 57 sits where the blue ramp from band 0 to band 1 crosses a rounding tie exactly. The blend there
+        // is (57 - 55.8125) / (167.4375 - 55.8125) = 1.1875 / 111.625 = 19/1786, and 47 * 19/1786 = 0.5 to the
+        // penny - 47 * 1.1875 = 55.8125 = half of 111.625 - so the answer depends entirely on the precision the
+        // ratio is kept in: binary64 holds exactly 0.5 and half-up gives 1, while Float quantises the ratio to
+        // 0.010638297535..., whose product with 47 is 0.49999998 and gives 0. This is the only test that dies if
+        // `fieldBlend` ever returns `.toFloat()` again, and it is why Task 10's Python can trust us: Python has
+        // no 32-bit path here at all. Verified numerically, not reasoned, at 893/8 band height.
+        val bands = MutableList(8) { Pixels.rgb(0, 0, 0) }.also { it[1] = Pixels.rgb(0, 0, 47) }
+        assertEquals(Palette.opaque(Pixels.rgb(0, 0, 1)), g.blendOf(bands, g.fieldBlend(57)))
+    }
+
     @Test fun everyColourTheGeometryHandsOutIsOpaque() {
         // BandSampler (T3) packs a measured band as 0x00RRGGBB, and that packing is the record's and Python's.
         // Canvas and Compose read the high byte as alpha, so drawing one of those ints paints nothing: the
@@ -1733,7 +1745,7 @@ data class CardGeometry(val width: Int = 1080, val height: Int = 1440) {
 }
 ```
 
-- [ ] **Step 4: Run** → PASS, 16 tests (`:core` total 81).
+- [ ] **Step 4: Run** → PASS, 17 tests (`:core` total 82).
 
 - [ ] **Step 5: Implement `CardRenderer.kt`.** It draws; it does not decide. There is no saturation, contrast, tint, or white-balance call in this file, and adding one breaks the project's premise.
 
