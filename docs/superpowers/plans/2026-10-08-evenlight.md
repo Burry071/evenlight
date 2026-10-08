@@ -1532,12 +1532,12 @@ class CardGeometryTest {
     }
 
     @Test fun aboveTheFirstCentreIsPurelyBandZero() {
-        assertEquals(0f, g.fieldBlend(0), 1e-6)
-        assertEquals(0f, g.fieldBlend(40), 1e-6)
+        assertEquals(0f, g.fieldBlend(0), 1e-6f)
+        assertEquals(0f, g.fieldBlend(40), 1e-6f)
     }
 
     @Test fun belowTheLastCentreIsPurelyBandSeven() {
-        assertEquals(7f, g.fieldBlend(g.fieldHeight - 1), 1e-6)
+        assertEquals(7f, g.fieldBlend(g.fieldHeight - 1), 1e-6f)
     }
 
     @Test fun halfwayBetweenTwoCentresIsAnEvenBlend() {
