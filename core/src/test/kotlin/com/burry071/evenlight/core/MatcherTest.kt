@@ -44,6 +44,26 @@ class MatcherTest {
     @Test fun vocabularyHasThirtyFiveWordsAndUniqueAnchors() {
         assertEquals(35, Vocabulary.size)
         assertEquals(35, Vocabulary.words.map { it.word }.toSet().size)
-        assertEquals(35, Vocabulary.words.map { it.anchorHex }.toSet().size)
+        // Parsed colours, not hex strings: two entries spelling the same colour differently would keep the
+        // matcher's count at 35 while one anchor silently shadows the other.
+        assertEquals(35, Vocabulary.words.map { it.anchor }.toSet().size)
+    }
+
+    @Test fun exactEquidistanceResolvesToTheEarlierVocabularyEntry() {
+        // Determinism is the whole argument for matching in code, and `d < best` only holds because the list
+        // order is fixed: milky (#CFC9BE) precedes linen (#D9CFC0), so this colour must be "milky". Such
+        // colours are not exotic — sweeping every integral (r, g) against that pair finds 953 colours
+        // exactly equidistant between milky and linen with no closer anchor. Task 10's Python must agree, so
+        // both languages need the same strict `<` and the same list order.
+        assertEquals("milky", Matcher.nameFor(Pixels.parseHex("#D4CCBF")))
+    }
+
+    @Test fun allThreeChannelsParticipateInTheDistance() {
+        // One grey and three single-channel moves. A metric that ignored a channel would name every one of
+        // these "flint", which is how a drop-blue regression hides behind an anchor-named-itself test.
+        assertEquals("flint", Matcher.nameFor(Pixels.rgb(128, 128, 128)))
+        assertEquals("copper", Matcher.nameFor(Pixels.rgb(128, 128, 0)))
+        assertEquals("still", Matcher.nameFor(Pixels.rgb(0, 128, 128)))
+        assertEquals("bruised", Matcher.nameFor(Pixels.rgb(128, 0, 128)))
     }
 }
