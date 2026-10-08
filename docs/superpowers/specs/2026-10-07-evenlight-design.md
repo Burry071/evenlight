@@ -219,8 +219,9 @@ the bands are whole-frame averages, so small shifts between evenings move the ca
   hex per word** (the list was described as 36 words in the first draft; counted, it is 35, and the count is
   now fixed everywhere rather than padded with a word nobody chose — still, smothered, clearing, brassy, tarnished, milky, flint, ember, copper, chalk, slate,
   ash, wax, honey, bruised, waited, low, thin, wide, close, dusty, wet, salt, iron, paper, linen, wool,
-  amber, smoke, glass, held, lifted, sunken, gathering, fading, bright). Sub-millisecond, reproducible, and
-  structurally incapable of inventing a word.
+  amber, smoke, held, lifted, sunken, gathering, fading, bright). Sub-millisecond, reproducible, and
+  structurally incapable of inventing a word. The dropped 36th was `glass` — named here so the count can be
+  audited instead of re-litigated; it never had an anchor hex, so it was never matchable in the first place.
 - Record: eight hex values, winner index, name, sun altitude, shutter time, device, wording source.
 
 ### 8.5 What "low light" does
