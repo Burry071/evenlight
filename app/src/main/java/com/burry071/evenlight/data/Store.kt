@@ -53,7 +53,23 @@ class Store(val root: File) {
     }
 
     fun readRecords(): List<EveningRecord> =
-        records.listFiles()?.sortedBy { it.name }?.map { decodeOrNull(it) }?.filterNotNull() ?: emptyList()
+        records.listFiles()?.mapNotNull { f -> decodeOrNull(f)?.let { f to it } }
+            ?.sortedWith(compareBy({ orderOf(it.first.name).first }, { orderOf(it.first.name).second }))
+            ?.map { it.second } ?: emptyList()
+
+    /**
+     * The (date, attempt) a filename asserts. Ordering comes from the NAME because the name is what recordFile
+     * wrote: sorting by the decoded pair instead would let a body whose `attempt` field is missing - decode defaults
+     * it to 1 - or whose `date` was edited outside the app decide the stack's order, and `sortedBy` being stable
+     * would leave those ties in whatever order listFiles() happened to return. Nothing here filters: a file that
+     * decodes is a record and shows up, and an evening that vanishes from this list is the exact failure this
+     * store exists to prevent.
+     */
+    private fun orderOf(name: String): Pair<String, Int> {
+        val base = name.removeSuffix(".json")
+        val i = base.indexOf("-attempt-")
+        return if (i < 0) base to 1 else base.substring(0, i) to (base.substring(i + 9).toIntOrNull() ?: 1)
+    }
 
     fun corruptRecords(): Int = records.listFiles()?.count {
         it.name.endsWith(".json") && decodeOrNull(it) == null

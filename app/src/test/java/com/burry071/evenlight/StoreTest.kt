@@ -29,6 +29,9 @@ class StoreTest {
 
     @Test fun shutterNameIsDateAndTimeToTheMinute() {
         assertEquals("2026-10-08--1759", temp().nextShutterName(LocalDateTime.of(2026, 10, 8, 17, 59, 33)))
+        // Both single-digit cases, because `twoDigit`'s padding branch is otherwise never exercised and dropping
+        // the zero - 09:05 becoming "95" - would still leave the first assertion green.
+        assertEquals("2026-10-08--0905", temp().nextShutterName(LocalDateTime.of(2026, 10, 8, 9, 5)))
     }
 
     @Test fun aSecondShotTheSameEveningIsAttemptTwo() {
@@ -40,7 +43,50 @@ class StoreTest {
     }
 
     @Test fun anEveningWithNoRecordIsNotAnEveningWithACard() {
-        assertFalse(temp().eveningsWithCards().contains("2026-10-07"))
+        // Written the other way round this would pass on an empty store whatever eveningsWithCards did, so the
+        // record has to exist first: the distinction under test is record-without-card, not nothing-without-nothing.
+        val store = temp()
+        store.writeRecord(record("2026-10-08"), 1)
+        assertFalse(store.eveningsWithCards().contains("2026-10-08"))
+        store.writeCard("2026-10-08", byteArrayOf(0))
+        assertTrue(store.eveningsWithCards().contains("2026-10-08"))
+        assertFalse(store.eveningsWithCards().contains("2026-10-07"))
+    }
+
+    @Test fun attemptsComeBackInOrderEvenThoughADashSortsBeforeADot() {
+        // recordFile writes "2026-10-08.json" for attempt 1 and "2026-10-08-attempt-2.json" for attempt 2, and '-'
+        // (0x2D) sorts before '.' (0x2E), so sorting by file name alone hands Task 9's stack and Task 10's
+        // "latest attempt wins" the attempts backwards. Sort by the (date, attempt) the NAME asserts.
+        val store = temp()
+        store.writeRecord(record("2026-10-08"), 1)
+        // The body carries attempt 2 as well, the way shoot() writes it: readRecords returns the decoded record,
+        // so without this the assertion below could only ever see [1, 1] whatever the sort did.
+        store.writeRecord(record("2026-10-08").copy(attempt = 2), 2)
+        assertEquals(listOf(1, 2), store.readRecords().map { it.attempt })
+    }
+
+    @Test fun aBodyThatContradictsItsFileNameStillSortsByItsFileName() {
+        // decode defaults a missing `attempt` to 1, so a file named attempt-2 whose body says 1 would tie with the
+        // real attempt 1 if the sort key came from the decoded record - and sortedBy is stable, so the winner would
+        // be whatever order listFiles() happened to return. The name is what recordFile wrote; the name decides.
+        // The two bodies are made distinguishable by their `name`, since their `attempt` fields are deliberately
+        // identical: the one in the attempt-2 FILE must come back last even though it claims to be attempt 1.
+        val store = temp()
+        store.writeRecord(record("2026-10-08").copy(name = "from-the-bare-file"), 1)
+        File(store.root, "evenlight/records/2026-10-08-attempt-2.json")
+            .writeText(record("2026-10-08").copy(name = "from-the-named-file").encode())
+        val read = store.readRecords()
+        assertEquals("a decoded record must never be dropped, whatever its body claims", 2, read.size)
+        assertEquals("from-the-bare-file", read.first().name)
+        assertEquals("from-the-named-file", read.last().name)
+    }
+
+    @Test fun attemptOneIsTheBareDateFileAndAttemptThreeIsNamed() {
+        // The naming convention is what eveningsWithCards and Task 10 both read; without this assertion the
+        // `attempt <= 1` branch could become `< 1` and every test above would still pass.
+        val store = temp()
+        assertEquals("2026-10-08.json", store.recordFile("2026-10-08", 1).name)
+        assertEquals("2026-10-08-attempt-3.json", store.recordFile("2026-10-08", 3).name)
     }
 
     @Test fun corruptRecordsAreCountedNotDeleted() {

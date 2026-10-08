@@ -48,8 +48,14 @@ class FrameSource(private val context: Context, private val executor: Executor) 
         provider.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, preview, imageCapture)
     }
 
+    /**
+     * A camera failure is thrown, not folded into an empty `Still`: `shoot()` is wrapped in `runCatching`, so the
+     * exception reaches the screen as its own message. Returning an empty frame instead would make permission
+     * revocation, a missing camera and an encoding failure all read "capture produced no pixels" - on a step whose
+     * entire purpose is a failure legible without logcat.
+     */
     suspend fun take(rotationDegrees: Int): Still {
-        val capture = imageCapture ?: return Still(IntArray(0), 0, 0, ByteArray(0))
+        val capture = imageCapture ?: throw IllegalStateException("camera not bound yet")
         val target = File(context.cacheDir, "shot.jpg")
         val jpeg = suspendCoroutine { cont ->
             val options = ImageCapture.OutputFileOptions.Builder(target).build()
@@ -57,10 +63,12 @@ class FrameSource(private val context: Context, private val executor: Executor) 
                 override fun onImageSaved(o: ImageCapture.OutputFileResults) {
                     cont.resume(if (target.exists()) target.readBytes() else ByteArray(0))
                 }
-                override fun onError(exc: ImageCaptureException) { cont.resume(ByteArray(0)) }
+                override fun onError(exc: ImageCaptureException) {
+                    cont.resumeWith(Result.failure(IllegalStateException("capture failed: ${exc.imageCaptureError}", exc)))
+                }
             })
         }
-        if (jpeg.isEmpty()) return Still(IntArray(0), 0, 0, jpeg)
+        if (jpeg.isEmpty()) throw IllegalStateException("capture wrote an empty file")
         return decode(jpeg, rotationDegrees)
     }
 
