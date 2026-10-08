@@ -34,7 +34,7 @@ Every task's requirements include this section.
 - **Measured colour is never altered.** No saturation, contrast, vibrance, white balance, tint, filter, preset, or blend trick may touch a band between the sampler and the strip. The only permitted transformation is the linear blend between band centres, defined in Task 7 and reproduced in Python.
 - Eight bands, ordered top → horizon, target width 64, band means arithmetic over the band's rows, rounded half-up.
 - The vocabulary is exactly the 35 words in `Vocabulary.kt`. The model may never pick, rank, order, or measure; it words a line from a name it is handed.
-- Model output is rejected if it contains `[0-9]`, `#`, `<`, `{`, `(`, or a newline, exceeds 8 words, is not lowercase, or omits the given name. Rejection is counted, never hidden.
+- Model output is rejected if it contains `[0-9]`, `#`, `<`, `{`, `(`, or a newline, has **fewer than 4 or more than 8 words** (spec §7 asks for "one lowercase line of 4-8 words", so both ends are gates), is not lowercase, or omits the given name. "Omits" means the name is absent as a **word**: punctuation attached to it (`brassy,`) still counts, while `brassiness` does not. Rejection is counted, never hidden.
 - Gaps are never collapsed: an evening with no photo renders as an outlined empty card with its date.
 - No number may appear that the app did not measure or compute. No count in the README may be rounded up.
 - UI copy: action names only (`Shoot`, `Stack`, `Setup`). **No "AI", "model", "Gemma", or "thinking" anywhere in the app's chrome.**
@@ -935,6 +935,22 @@ class VerifierTest {
         assertEquals(Verdict.Reject("name absent"), Verifier.check("a quiet blue evening", "brassy"))
     }
 
+    @Test fun rejectsFewerThanFourWords() {
+        // The spec's wording task is "one lowercase line of 4-8 words". The ceiling alone would let a card
+        // print a single word, so the floor is as much a contract as the ceiling - and it must be checked
+        // before the name, since "brassy" on its own satisfies every other rule.
+        assertEquals(Verdict.Reject("too-short"), Verifier.check("brassy light holds", "brassy"))
+        assertEquals(Verdict.Accept, Verifier.check("brassy light holds low", "brassy"))
+    }
+
+    @Test fun theNameCountsAsAWordEvenWithPunctuationAttached() {
+        // A 1B model writes commas and periods. Matching the name as a lowercase-letter token accepts
+        // "brassy," without accepting "brassiness", so `wording_rejected` reports the model refusing the
+        // contract rather than reporting a parsing artifact of ours.
+        assertEquals(Verdict.Accept, Verifier.check("brassy, light holding low", "brassy"))
+        assertEquals(Verdict.Reject("name absent"), Verifier.check("brassiness holds the low sky", "brassy"))
+    }
+
     @Test fun rejectsBlankOutput() {
         assertEquals(Verdict.Reject("blank"), Verifier.check("   ", "brassy"))
     }
@@ -966,15 +982,20 @@ object Verifier {
         if (line.any { it.isDigit() }) return Verdict.Reject("digit")
         if (line.any { banned.contains(it) }) return Verdict.Reject("markup")
         if (line != line.lowercase()) return Verdict.Reject("not-lowercase")
+        // Two different splits, on purpose. `words` counts whitespace runs, which is what "4-8 words" means
+        // to a reader and to the prompt. `tokens` strips every non-letter, which is what makes "brassy," the
+        // word brassy without letting "brassiness" pass as it. Collapsing them into one split would either
+        // count "brassy," as two words or accept a stem inside a longer word.
         val words = line.trim().split(Regex("\\s+"))
         if (words.size > 8) return Verdict.Reject("too-long")
-        if (!words.contains(name)) return Verdict.Reject("name absent")
+        if (words.size < 4) return Verdict.Reject("too-short")
+        if (line.split(Regex("[^a-z]+")).none { it == name }) return Verdict.Reject("name absent")
         return Verdict.Accept
     }
 }
 ```
 
-- [ ] **Step 4: Run** → PASS, 9 tests. **Step 5: Commit** `git commit -am "feat: wording verifier that cannot let an unmeasured number reach a card"`.
+- [ ] **Step 4: Run** → PASS, 11 tests. **Step 5: Commit** `git commit -am "feat: wording verifier that cannot let an unmeasured number reach a card"`.
 
 ---
 
