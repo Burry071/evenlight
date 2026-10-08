@@ -46,14 +46,17 @@ class EvenlightController(
 
     /**
      * Two reads of one wall clock around one shutter press, so what this catches is a jump that lands *during* the
-     * capture - an NTP correction at 17:59 - and what it cannot catch is a clock rewound last Tuesday. What
-     * actually defends the stack's order against that is the shutter name stored in every record; this flag marks
-     * the row rather than silently reordering it (spec section 11).
+     * capture - an NTP correction at 17:59 - and what it cannot catch is a clock rewound before the app started.
      *
-     * A third thing trips it, and pretending otherwise would be a false claim in a comment: System.nanoTime() is
-     * CLOCK_MONOTONIC and does not advance while the device sleeps, while LocalDateTime.now() does. A phone that
-     * dozed between the two reads shows wall time gone by and monotonic time not, and the row is marked suspect
-     * for a reason that is not a clock fault. That is acceptable because the flag is a mark, not a diagnosis.
+     * It catches less than that, and the earlier version of this comment was wrong to imply otherwise: it said the
+     * stored shutter name is what defends the stack's order, but readRecords() orders by the filename, and the
+     * filename is built from this same wall clock. A clock rewound last Tuesday therefore really does move that
+     * evening's row in the stack, and nothing in the app notices. So this flag is a mark on one row saying "the
+     * two clocks disagreed here" (spec section 11) - not a guard on the stack, and not a diagnosis either.
+     *
+     * A third thing trips it: System.nanoTime() is CLOCK_MONOTONIC and does not advance while the device sleeps,
+     * while LocalDateTime.now() does, so a phone that dozed between the two reads shows wall time gone by and
+     * monotonic time not, and the row is marked for a reason that is not a clock fault at all.
      */
     private fun clockSuspect(now: LocalDateTime, monoBefore: Long): Boolean {
         val wallAdvance = Duration.between(now, time.wallClock()).toMillis()

@@ -54,16 +54,20 @@ class Store(val root: File) {
 
     fun readRecords(): List<EveningRecord> =
         records.listFiles()?.mapNotNull { f -> decodeOrNull(f)?.let { f to it } }
-            ?.sortedWith(compareBy({ orderOf(it.first.name).first }, { orderOf(it.first.name).second }))
+            ?.sortedWith(compareBy({ orderOf(it.first.name).first }, { orderOf(it.first.name).second }, { it.first.name }))
             ?.map { it.second } ?: emptyList()
 
     /**
      * The (date, attempt) a filename asserts. Ordering comes from the NAME because the name is what recordFile
      * wrote: sorting by the decoded pair instead would let a body whose `attempt` field is missing - decode defaults
-     * it to 1 - or whose `date` was edited outside the app decide the stack's order, and `sortedBy` being stable
-     * would leave those ties in whatever order listFiles() happened to return. Nothing here filters: a file that
-     * decodes is a record and shows up, and an evening that vanishes from this list is the exact failure this
+     * it to 1 - or whose `date` was edited outside the app decide the stack's order. Nothing here filters: a file
+     * that decodes is a record and shows up, and an evening that vanishes from this list is the exact failure this
      * store exists to prevent.
+     *
+     * The filename is the third key in the comparator above, and that is not decoration. A name the app would
+     * never write - `2026-10-08-attempt-abc.json`, say - parses to attempt 1 here and would then tie with the real
+     * bare-date file, leaving `listFiles()` order to decide which one Task 10's "latest attempt wins" picks. With
+     * the name in the key the order is total and the same on every filesystem.
      */
     private fun orderOf(name: String): Pair<String, Int> {
         val base = name.removeSuffix(".json")

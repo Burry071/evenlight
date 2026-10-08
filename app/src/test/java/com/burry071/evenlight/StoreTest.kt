@@ -81,6 +81,21 @@ class StoreTest {
         assertEquals("from-the-named-file", read.last().name)
     }
 
+    @Test fun aNameTheAppWouldNeverWriteStillGetsADeterministicPlace() {
+        // `2026-10-08-attempt-abc.json` parses to attempt 1, tying with the real bare-date file. Without the
+        // filename as the comparator's third key that tie is settled by listFiles() order, so Task 10's
+        // "latest attempt wins" would depend on the filesystem - which is the nondeterminism this store is
+        // supposed to have removed. What this assertion pins is the ORDER THE NAME IMPLIES. Whether it also kills
+        // the mutant "third key deleted" depends on what listFiles() happens to return on this filesystem, so the
+        // fix round must run that mutation and report which it got; claiming teeth without watching it fail is
+        // the mistake this project has now been warned about five times.
+        val store = temp()
+        store.writeRecord(record("2026-10-08").copy(name = "bare"), 1)
+        File(store.root, "evenlight/records/2026-10-08-attempt-abc.json")
+            .writeText(record("2026-10-08").copy(name = "abc").encode())
+        assertEquals(listOf("abc", "bare"), store.readRecords().map { it.name })
+    }
+
     @Test fun attemptOneIsTheBareDateFileAndAttemptThreeIsNamed() {
         // The naming convention is what eveningsWithCards and Task 10 both read; without this assertion the
         // `attempt <= 1` branch could become `< 1` and every test above would still pass.
