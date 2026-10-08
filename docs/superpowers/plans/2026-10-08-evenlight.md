@@ -1504,7 +1504,7 @@ data class EveningRecord(
 **Interfaces:**
 - Produces: `object Palette` (packed ARGB ints, listed in Global Constraints, plus `opaque(c): Int` — the one
   crossing from the measurement packing `0x00RRGGBB` to the drawing packing `0xAARRGGBB`);
-  `data class CardGeometry(val width: Int = 1080, val height: Int = 1440)` with `fieldHeight: Int`, `paperTop: Int`, `bandHeight: Double`, `stripHeight: Int`, `stripTop: Int`, `bandCentreY(i): Double`, `fieldBlend(y: Int): Float`, `inkOn(band: Int): Int`, `blendOf(bands: List<Int>, blend: Float): Int`;
+  `data class CardGeometry(val width: Int = 1080, val height: Int = 1440)` with `fieldHeight: Int`, `paperTop: Int`, `bandHeight: Double`, `stripHeight: Int`, `stripTop: Int`, `bandCentreY(i): Double`, `fieldBlend(y: Int): Double`, `inkOn(band: Int): Int`, `blendOf(bands: List<Int>, blend: Double): Int` — every blend number is binary64, in Kotlin and in Python alike, because Float quantising the row ratio moves `.5` boundaries the mirror cannot see (see the precision note in Step 3);
   `class CardRenderer(displayFont: Typeface, textFont: Typeface) { fun render(bands: List<Int>, header: Header): Bitmap }` with `data class Header(name, dateLabel, sunAltitudeDeg, wording, winnerIndex: Int, neighbours: List<Int>, night: Boolean)`.
 - Consumed by: Tasks 8, 9, 10 (Python mirrors the same numbers).
 
@@ -1531,34 +1531,44 @@ class CardGeometryTest {
         assertTrue(centres.first() >= 0.0 && centres.last() < g.fieldHeight)
     }
 
+    @Test fun bandCentresSitAtHalfBandOffsets() {
+        // `bandCentreY` is `(i + 0.5) * bandHeight`, and the 0.5 is the whole design: it is why the top of the
+        // field is band 0 untouched rather than a blend of nothing with band 0, and why row 0 reads as the sky's
+        // first measured colour. With `(i + 0.6)` instead, all 80 other tests still pass - verified by mutation -
+        // because every blend test below only asks for monotonicity and endpoints. These two numbers are exactly
+        // 0.5 * 111.625 and 7.5 * 111.625, so they are stated rather than recomputed from the code under test.
+        assertEquals(55.8125, g.bandCentreY(0), 0.0)
+        assertEquals(837.1875, g.bandCentreY(7), 0.0)
+    }
+
     @Test fun aboveTheFirstCentreIsPurelyBandZero() {
-        assertEquals(0f, g.fieldBlend(0), 1e-6f)
-        assertEquals(0f, g.fieldBlend(40), 1e-6f)
+        assertEquals(0.0, g.fieldBlend(0), 1e-6)
+        assertEquals(0.0, g.fieldBlend(40), 1e-6)
     }
 
     @Test fun belowTheLastCentreIsPurelyBandSeven() {
-        assertEquals(7f, g.fieldBlend(g.fieldHeight - 1), 1e-6f)
+        assertEquals(7.0, g.fieldBlend(g.fieldHeight - 1), 1e-6)
     }
 
     @Test fun halfwayBetweenTwoCentresIsAnEvenBlend() {
         val mid = ((g.bandCentreY(2) + g.bandCentreY(3)) / 2).toInt()
-        assertEquals(2.5f, g.fieldBlend(mid), 0.02f)
+        assertEquals(2.5, g.fieldBlend(mid), 0.02)
     }
 
     @Test fun blendingTwoBandsAveragesTheChannelsAndRoundsHalfUp() {
         val b = MutableList(8) { Pixels.rgb(0, 0, 0) }.also { it[1] = Pixels.rgb(200, 100, 40) }
-        assertEquals(Palette.opaque(Pixels.rgb(0, 0, 0)), g.blendOf(b, 0f))
-        assertEquals(Palette.opaque(Pixels.rgb(200, 100, 40)), g.blendOf(b, 1f))
-        assertEquals(Palette.opaque(Pixels.rgb(100, 50, 20)), g.blendOf(b, 0.5f))
+        assertEquals(Palette.opaque(Pixels.rgb(0, 0, 0)), g.blendOf(b, 0.0))
+        assertEquals(Palette.opaque(Pixels.rgb(200, 100, 40)), g.blendOf(b, 1.0))
+        assertEquals(Palette.opaque(Pixels.rgb(100, 50, 20)), g.blendOf(b, 0.5))
         // The three cases above average to exact integers, so none of them exercises a rounding rule. Odd
         // channels land the average on exactly .5, which is where Kotlin and Python can part company: half-up
         // gives 101/51/21, banker's rounding gives 100/50/20. Task 10 mirrors this line in Python, so the tie
         // direction is cross-language contract, not local style.
         val odd = MutableList(8) { Pixels.rgb(0, 0, 0) }.also { it[1] = Pixels.rgb(201, 101, 41) }
-        assertEquals(Palette.opaque(Pixels.rgb(101, 51, 21)), g.blendOf(odd, 0.5f))
+        assertEquals(Palette.opaque(Pixels.rgb(101, 51, 21)), g.blendOf(odd, 0.5))
     }
 
-    @Test fun everyColourTheRendererIsGivenIsOpaque() {
+    @Test fun everyColourTheGeometryHandsOutIsOpaque() {
         // BandSampler (T3) packs a measured band as 0x00RRGGBB, and that packing is the record's and Python's.
         // Canvas and Compose read the high byte as alpha, so drawing one of those ints paints nothing: the
         // field, the winner strip and the neighbour chips all vanish, and no int-equality test here can see it
@@ -1567,7 +1577,7 @@ class CardGeometryTest {
         fun alpha(c: Int) = (c ushr 24) and 0xFF
         val bands = List(8) { Pixels.rgb(201, 101, 41) }
         assertEquals(0, alpha(bands[0]))
-        for (t in floatArrayOf(0f, 0.5f, 2.7f, 7f)) assertEquals(0xFF, alpha(g.blendOf(bands, t)))
+        for (t in doubleArrayOf(0.0, 0.5, 2.7, 7.0)) assertEquals(0xFF, alpha(g.blendOf(bands, t)))
         assertEquals(0xFF, alpha(g.inkOn(bands[0])))
         assertEquals(0xFF, alpha(Palette.opaque(bands[0])))
         // Promoting must not shift or clip a channel, or the strip stops being the measured colour.
@@ -1671,6 +1681,11 @@ object Palette {
  * Card layout as pure numbers, so the Android renderer and the Python reference tool cannot
  * drift. The field is a linear blend between band centres; that blend is the ONLY permitted
  * transformation of a measured colour, and it is defined here rather than by a shader.
+ *
+ * Every blend number is binary64 (`Double`), on purpose and in both languages. The ratio `(y-a)/(b-a)`
+ * is not representable, so quantising it to Float moves where a channel average lands relative to a `.5`
+ * rounding boundary - and Task 10's Python mirror works in binary64 like this does, so a Float path here
+ * disagrees with the reference tool pixel-for-pixel on the very rows the project is judged on.
  */
 data class CardGeometry(val width: Int = 1080, val height: Int = 1440) {
     val fieldHeight: Int = Pixels.roundHalfUp(height * 0.62)
@@ -1682,14 +1697,14 @@ data class CardGeometry(val width: Int = 1080, val height: Int = 1440) {
     fun bandCentreY(i: Int): Double = (i + 0.5) * bandHeight
 
     /** Integer part = the lower band index; fraction = how far toward the next one. */
-    fun fieldBlend(y: Int): Float {
-        if (y <= bandCentreY(0)) return 0f
-        if (y >= bandCentreY(7)) return 7f
+    fun fieldBlend(y: Int): Double {
+        if (y <= bandCentreY(0)) return 0.0
+        if (y >= bandCentreY(7)) return 7.0
         for (i in 0 until 7) {
             val a = bandCentreY(i); val b = bandCentreY(i + 1)
-            if (y < b) return (i + (y - a) / (b - a)).toFloat()
+            if (y < b) return i + (y - a) / (b - a)
         }
-        return 7f
+        return 7.0
     }
 
     /**
@@ -1699,12 +1714,17 @@ data class CardGeometry(val width: Int = 1080, val height: Int = 1440) {
      */
     fun inkOn(band: Int): Int = if (Pixels.relativeLuminance(band) < 0.45) Palette.PAPER else Palette.INK
 
-    fun blendOf(bands: List<Int>, blend: Float): Int {
+    /**
+     * Blend two neighbouring measured bands. `bands` must hold at least two entries - the caller is the
+     * renderer over a sampler output, so eight is guaranteed and a runtime check here would be dead code
+     * that no test can reach.
+     */
+    fun blendOf(bands: List<Int>, blend: Double): Int {
         val i = max(0, min(blend.toInt(), bands.size - 2))
-        val t = (blend - i).coerceIn(0f, 1f)
+        val t = (blend - i).coerceIn(0.0, 1.0)
         val a = bands[i]; val b = bands[i + 1]
         fun mix(shift: Int) = Pixels.roundHalfUp(
-            (((a shr shift) and 0xFF) * (1 - t) + ((b shr shift) and 0xFF) * t).toDouble()
+            (((a shr shift) and 0xFF) * (1 - t) + ((b shr shift) and 0xFF) * t)
         ).coerceIn(0, 255)
         // Alpha is asserted here rather than left to the caller: the field is 893 drawn lines, and a blend that
         // returned 0x00RRGGBB would make the whole card invisible while every int comparison here still passed.
@@ -1713,7 +1733,7 @@ data class CardGeometry(val width: Int = 1080, val height: Int = 1440) {
 }
 ```
 
-- [ ] **Step 4: Run** → PASS, 15 tests (`:core` total 80).
+- [ ] **Step 4: Run** → PASS, 16 tests (`:core` total 81).
 
 - [ ] **Step 5: Implement `CardRenderer.kt`.** It draws; it does not decide. There is no saturation, contrast, tint, or white-balance call in this file, and adding one breaks the project's premise.
 
@@ -1724,6 +1744,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Typeface
+import com.burry071.evenlight.core.BandSampler
 import com.burry071.evenlight.core.CardGeometry
 import com.burry071.evenlight.core.Palette
 
@@ -1783,7 +1804,10 @@ class CardRenderer(private val displayFont: Typeface, private val textFont: Type
         wrap(c, p, header.wording, 56f, geo.paperTop + 290f, geo.width - 112f, 60f)
 
         p.color = quiet; p.textSize = 32f
-        c.drawText("measured, not adjusted \u00B7 8 bands", 56f, geo.height - 56f, p)
+        // "8 bands" is a fact about the sampler, so it is read from the sampler rather than typed into display
+        // copy - a literal here would become an unmeasured number the moment BAND_COUNT moves, and the project's
+        // rule is that no number appears on a card the app did not measure or compute.
+        c.drawText("measured, not adjusted \u00B7 ${BandSampler.BAND_COUNT} bands", 56f, geo.height - 56f, p)
         return bmp
     }
 
@@ -2399,6 +2423,10 @@ def bands_for(path):
 ```
 
 `VOCABULARY` must be copied from `Vocabulary.kt` verbatim — same 35 words, same order, same anchors, as `(word, (r, g, b))` tuples. A divergent anchor makes a sampler bug look like a fixture problem. Add `render_card(bands, out_path)` reproducing Task 7's numbers (`field_height = round_half_up(h * 0.62)`, blend between band centres, strip, ink rule) with Pillow rectangles and `ImageDraw.text`.
+
+Two mirror rules from Task 7's review, both load-bearing:
+- **Canonical precision is binary64.** Every Python expression that reproduces `fieldBlend`/`blendOf` must stay in plain `float` (which *is* binary64) and must not pass through `numpy.float32`, `struct.pack('f', …)`, or Pillow's 8-bit intermediate. Kotlin does the same after Ruling 36. A `Float` on one side and a `double` on the other disagree at the `.5` boundaries — measured at 13,161 divergent channel outcomes over the 893 rows of a real card — which would surface as an unexplained pixel diff rather than as the precision bug it is.
+- **Alpha never appears.** `Palette.opaque` exists because Android's `Canvas` reads a high byte; Pillow has no such byte in an `RGB` image. The comparison is over `(r, g, b)` triples only, and the Python side must not add an alpha channel to "match" the Kotlin ints, or the two disagree by construction.
 
 - [ ] **Step 4: Write the Python test and make it pass.**
 
