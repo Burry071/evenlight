@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Typeface
+import com.burry071.evenlight.core.BandSampler
 import com.burry071.evenlight.core.CardGeometry
 import com.burry071.evenlight.core.Palette
 
@@ -63,7 +64,10 @@ class CardRenderer(private val displayFont: Typeface, private val textFont: Type
         wrap(c, p, header.wording, 56f, geo.paperTop + 290f, geo.width - 112f, 60f)
 
         p.color = quiet; p.textSize = 32f
-        c.drawText("measured, not adjusted \u00B7 8 bands", 56f, geo.height - 56f, p)
+        // "8 bands" is a fact about the sampler, so it is read from the sampler rather than typed into display
+        // copy - a literal here would become an unmeasured number the moment BAND_COUNT moves, and the project's
+        // rule is that no number appears on a card the app did not measure or compute.
+        c.drawText("measured, not adjusted \u00B7 ${BandSampler.BAND_COUNT} bands", 56f, geo.height - 56f, p)
         return bmp
     }
 

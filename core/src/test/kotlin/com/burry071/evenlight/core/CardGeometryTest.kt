@@ -18,34 +18,44 @@ class CardGeometryTest {
         assertTrue(centres.first() >= 0.0 && centres.last() < g.fieldHeight)
     }
 
+    @Test fun bandCentresSitAtHalfBandOffsets() {
+        // `bandCentreY` is `(i + 0.5) * bandHeight`, and the 0.5 is the whole design: it is why the top of the
+        // field is band 0 untouched rather than a blend of nothing with band 0, and why row 0 reads as the sky's
+        // first measured colour. With `(i + 0.6)` instead, all 80 other tests still pass - verified by mutation -
+        // because every blend test below only asks for monotonicity and endpoints. These two numbers are exactly
+        // 0.5 * 111.625 and 7.5 * 111.625, so they are stated rather than recomputed from the code under test.
+        assertEquals(55.8125, g.bandCentreY(0), 0.0)
+        assertEquals(837.1875, g.bandCentreY(7), 0.0)
+    }
+
     @Test fun aboveTheFirstCentreIsPurelyBandZero() {
-        assertEquals(0f, g.fieldBlend(0), 1e-6f)
-        assertEquals(0f, g.fieldBlend(40), 1e-6f)
+        assertEquals(0.0, g.fieldBlend(0), 1e-6)
+        assertEquals(0.0, g.fieldBlend(40), 1e-6)
     }
 
     @Test fun belowTheLastCentreIsPurelyBandSeven() {
-        assertEquals(7f, g.fieldBlend(g.fieldHeight - 1), 1e-6f)
+        assertEquals(7.0, g.fieldBlend(g.fieldHeight - 1), 1e-6)
     }
 
     @Test fun halfwayBetweenTwoCentresIsAnEvenBlend() {
         val mid = ((g.bandCentreY(2) + g.bandCentreY(3)) / 2).toInt()
-        assertEquals(2.5f, g.fieldBlend(mid), 0.02f)
+        assertEquals(2.5, g.fieldBlend(mid), 0.02)
     }
 
     @Test fun blendingTwoBandsAveragesTheChannelsAndRoundsHalfUp() {
         val b = MutableList(8) { Pixels.rgb(0, 0, 0) }.also { it[1] = Pixels.rgb(200, 100, 40) }
-        assertEquals(Palette.opaque(Pixels.rgb(0, 0, 0)), g.blendOf(b, 0f))
-        assertEquals(Palette.opaque(Pixels.rgb(200, 100, 40)), g.blendOf(b, 1f))
-        assertEquals(Palette.opaque(Pixels.rgb(100, 50, 20)), g.blendOf(b, 0.5f))
+        assertEquals(Palette.opaque(Pixels.rgb(0, 0, 0)), g.blendOf(b, 0.0))
+        assertEquals(Palette.opaque(Pixels.rgb(200, 100, 40)), g.blendOf(b, 1.0))
+        assertEquals(Palette.opaque(Pixels.rgb(100, 50, 20)), g.blendOf(b, 0.5))
         // The three cases above average to exact integers, so none of them exercises a rounding rule. Odd
         // channels land the average on exactly .5, which is where Kotlin and Python can part company: half-up
         // gives 101/51/21, banker's rounding gives 100/50/20. Task 10 mirrors this line in Python, so the tie
         // direction is cross-language contract, not local style.
         val odd = MutableList(8) { Pixels.rgb(0, 0, 0) }.also { it[1] = Pixels.rgb(201, 101, 41) }
-        assertEquals(Palette.opaque(Pixels.rgb(101, 51, 21)), g.blendOf(odd, 0.5f))
+        assertEquals(Palette.opaque(Pixels.rgb(101, 51, 21)), g.blendOf(odd, 0.5))
     }
 
-    @Test fun everyColourTheRendererIsGivenIsOpaque() {
+    @Test fun everyColourTheGeometryHandsOutIsOpaque() {
         // BandSampler (T3) packs a measured band as 0x00RRGGBB, and that packing is the record's and Python's.
         // Canvas and Compose read the high byte as alpha, so drawing one of those ints paints nothing: the
         // field, the winner strip and the neighbour chips all vanish, and no int-equality test here can see it
@@ -54,7 +64,7 @@ class CardGeometryTest {
         fun alpha(c: Int) = (c ushr 24) and 0xFF
         val bands = List(8) { Pixels.rgb(201, 101, 41) }
         assertEquals(0, alpha(bands[0]))
-        for (t in floatArrayOf(0f, 0.5f, 2.7f, 7f)) assertEquals(0xFF, alpha(g.blendOf(bands, t)))
+        for (t in doubleArrayOf(0.0, 0.5, 2.7, 7.0)) assertEquals(0xFF, alpha(g.blendOf(bands, t)))
         assertEquals(0xFF, alpha(g.inkOn(bands[0])))
         assertEquals(0xFF, alpha(Palette.opaque(bands[0])))
         // Promoting must not shift or clip a channel, or the strip stops being the measured colour.

@@ -27,6 +27,11 @@ object Palette {
  * Card layout as pure numbers, so the Android renderer and the Python reference tool cannot
  * drift. The field is a linear blend between band centres; that blend is the ONLY permitted
  * transformation of a measured colour, and it is defined here rather than by a shader.
+ *
+ * Every blend number is binary64 (`Double`), on purpose and in both languages. The ratio `(y-a)/(b-a)`
+ * is not representable, so quantising it to Float moves where a channel average lands relative to a `.5`
+ * rounding boundary - and Task 10's Python mirror works in binary64 like this does, so a Float path here
+ * disagrees with the reference tool pixel-for-pixel on the very rows the project is judged on.
  */
 data class CardGeometry(val width: Int = 1080, val height: Int = 1440) {
     val fieldHeight: Int = Pixels.roundHalfUp(height * 0.62)
@@ -38,14 +43,14 @@ data class CardGeometry(val width: Int = 1080, val height: Int = 1440) {
     fun bandCentreY(i: Int): Double = (i + 0.5) * bandHeight
 
     /** Integer part = the lower band index; fraction = how far toward the next one. */
-    fun fieldBlend(y: Int): Float {
-        if (y <= bandCentreY(0)) return 0f
-        if (y >= bandCentreY(7)) return 7f
+    fun fieldBlend(y: Int): Double {
+        if (y <= bandCentreY(0)) return 0.0
+        if (y >= bandCentreY(7)) return 7.0
         for (i in 0 until 7) {
             val a = bandCentreY(i); val b = bandCentreY(i + 1)
-            if (y < b) return (i + (y - a) / (b - a)).toFloat()
+            if (y < b) return i + (y - a) / (b - a)
         }
-        return 7f
+        return 7.0
     }
 
     /**
@@ -55,12 +60,17 @@ data class CardGeometry(val width: Int = 1080, val height: Int = 1440) {
      */
     fun inkOn(band: Int): Int = if (Pixels.relativeLuminance(band) < 0.45) Palette.PAPER else Palette.INK
 
-    fun blendOf(bands: List<Int>, blend: Float): Int {
+    /**
+     * Blend two neighbouring measured bands. `bands` must hold at least two entries - the caller is the
+     * renderer over a sampler output, so eight is guaranteed and a runtime check here would be dead code
+     * that no test can reach.
+     */
+    fun blendOf(bands: List<Int>, blend: Double): Int {
         val i = max(0, min(blend.toInt(), bands.size - 2))
-        val t = (blend - i).coerceIn(0f, 1f)
+        val t = (blend - i).coerceIn(0.0, 1.0)
         val a = bands[i]; val b = bands[i + 1]
         fun mix(shift: Int) = Pixels.roundHalfUp(
-            (((a shr shift) and 0xFF) * (1 - t) + ((b shr shift) and 0xFF) * t).toDouble()
+            (((a shr shift) and 0xFF) * (1 - t) + ((b shr shift) and 0xFF) * t)
         ).coerceIn(0, 255)
         // Alpha is asserted here rather than left to the caller: the field is 893 drawn lines, and a blend that
         // returned 0x00RRGGBB would make the whole card invisible while every int comparison here still passed.
