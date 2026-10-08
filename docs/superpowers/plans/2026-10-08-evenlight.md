@@ -1869,7 +1869,7 @@ This task must land tonight; every day of slippage costs the record an evening.
 - `Store(root)` promised `val root` but had `private val base`, so nothing downstream could find the directory it was told to use.
 - `readRecords`/`corruptRecords`/`loadSettings` can die on one hostile file instead of skipping it — see Step 3.
 - Clock-suspect detection was written against `SystemClock.elapsedRealtime()`, which a JVM unit test cannot drive (with `isReturnDefaultValues = true` it reads 0, so the guard would test as always-false). It is behind an injected `Timebase` now.
-- The camera path can rotate twice: CameraX rotates the saved JPEG by its target rotation, and `FrameSource.decode` rotates by hand. `setTargetRotation(Surface.ROTATION_0)` pins the file to sensor orientation so the manual rotation is the only one; Step 7's `height > width` check is the empirical proof.
+- The camera path can rotate twice: CameraX rotates the saved JPEG by its target rotation, and `FrameSource.decode` rotates by hand. `setTargetRotation(Surface.ROTATION_0)` pins the file to sensor orientation so the manual rotation is the only one. Step 7 confirmed this on device: the saved JPEG stayed landscape at 1856x1392 and carried EXIF orientation 6, i.e. the file was *not* pre-rotated and the manual turn is the only one. (The card PNG's `height > width` proves nothing here — `CardGeometry` fixes that size regardless of the photo.)
 
 - [ ] **Step 1: Write the failing tests** for the naming and gap rules — the two things that decide whether the stack can show a hole — plus the two rules that decide whether the stack can *lie*: that one unreadable file cannot hide the readable ones, and that a second shot cannot destroy the first.
 
@@ -2250,11 +2250,15 @@ Two decisions this file has to make, and the honest state of each:
   the user turns the phone, and `FrameSource.decode` then rotates it again by hand — an image that is upright or
   a quarter-turned depending on which of the two paths got there first. Pinning the target makes the manual
   rotation the only rotation.
-- **`rotationFor` is a hypothesis about this sensor's mounting, not a measured fact.** Back sensors are usually
+- **`rotationFor` was a hypothesis about this sensor's mounting until Step 7 measured it.** Back sensors are usually
   mounted 90° clockwise from the device's natural orientation, which is what the table below encodes. Step 7 is
   where it is checked, on the device, and the table is the single place to fix it. This matters more than it looks:
   `BandSampler` splits the frame into eight *rows*, so a sideways frame does not produce an ugly card, it produces
   bands read left-to-right through the sky — the wrong colours, stored as if measured.
+  **Outcome: the `0 -> 90` row held.** The saved JPEG's own EXIF orientation said 6 (rotate 90 CW), and re-deriving
+  the band means from that file under all four orientations matched what the app stored only for a clockwise 90 —
+  6.4 mean per-channel distance, against 284 for the counter-clockwise turn (which is the stored list reversed),
+  201 unrotated and 88 at 180. Rows 1, 2 and 3 are still unmeasured: the device was never rotated off natural.
 
 ```kotlin
 package com.burry071.evenlight.capture
@@ -2348,7 +2352,13 @@ class FrameSource(private val context: Context, private val executor: Executor) 
             return Still(px, w, h, jpeg)
         }
 
-        /** Display rotation -> the degrees the decoded bitmap must be turned to stand up. Unverified until Step 7. */
+        /**
+         * Display rotation -> the degrees the decoded bitmap must be turned to stand up. The `0 -> 90` row is now
+         * measured rather than assumed: the JPEG on the device carried EXIF orientation 6 (rotate 90 CW to display)
+         * and re-deriving the band means from that file matched the stored bands only under a clockwise 90. The
+         * other three rows are still a table nobody has exercised - the device was never rotated off its natural
+         * orientation, so 1, 2 and 3 remain hypotheses.
+         */
         fun rotationFor(displayRotation: Int): Int = when (displayRotation) {
             0 -> 90; 1 -> 0; 2 -> 180; else -> 270
         }
@@ -2621,18 +2631,53 @@ Then, before the first shot, give the emulator a place, since no Setup screen ex
 MSYS_NO_PATHCONV=1 adb shell "run-as com.burry071.evenlight sh -c 'mkdir -p files/evenlight && printf \x27{\"place\":\"emulator\",\"lat\":31.52,\"lon\":74.35}\x27 > files/evenlight/settings.json'"
 ```
 
-Checks, in order, each one closing something the JVM suite cannot:
+Checks, in order, each one closing something the JVM suite cannot. **Run on `trailwalk_lowend` (API 35, x86_64,
+emulated back camera) on 2026-10-09; the results are recorded under each one, including the two checks whose
+premise was wrong.**
+
 1. One JSON with 8 hex bands, a plausible `name`, `wording_source` `"none"`, `attempt` 1.
-2. `file /d/Temp/evenlight/cards/*.png` reports **1080x1440** — width less than height. This is the empirical close
-   for `rotationFor` (a hypothesis, Step 5) and, through it, for the bands being read down the sky rather than
-   across it.
-3. The PNG's eight bands resemble what the emulator's synthetic camera showed, and the field is visibly painted.
-   An all-paper card with a clean record means the `0x00RRGGBB` alpha trap (Ruling 34) is real on device: the fix is
-   that every measured colour reaches drawing through `Palette.opaque`, which `CardRenderer` already does — so if it
-   *is* blank, the bug is in that crossing and this is where it surfaces.
-4. The eight band edges are hard, not feathered into the paper. If they bleed, set `p.isAntiAlias = false` for the
-   field loop only (Task 7 finding 5, deliberately left open); strip, chips and text keep anti-aliasing.
+   **Passed.** `2026-10-09.json` came back with 8 bands, `winner` 5, `name` "flint", `attempt` 1,
+   `wording_source` "none", `clock_suspect` false.
+2. ~~`file …/cards/*.png` reports 1080x1440 — this is the empirical close for `rotationFor`.~~ **This check proved
+   nothing and was rewritten as a defect of mine, not of the app.** The card is 1080x1440 because
+   `CardGeometry(width = 1080, height = 1440)` says so; the renderer's output size never depended on the photo, so
+   a portrait PNG was guaranteed before the camera was touched. The real close is two measurements instead:
+   - The saved JPEG carries **EXIF orientation 6** ("rotate 90° clockwise to display") at 1856x1392, so
+     `setTargetRotation(Surface.ROTATION_0)` did pin the file to sensor orientation, and `rotationFor(0) = 90`
+     turns it the same way the camera stack itself says to.
+   - Re-deriving the 8 row-band means from the raw JPEG under each of the four orientations, and comparing against
+     the bands the app stored, gives mean per-channel distance **6.4 for rotate-90-CW** (the app's choice), 284 for
+     CCW (which is the stored list exactly reversed), 201 unrotated and 88 at 180. So the bands were read down the
+     upright sky, not across it. The 6.4 residual is the `inSampleSize` decode and the 64-wide bilinear pass, not
+     orientation.
+   `rotationFor`'s other three rows (1 → 0, 2 → 180, else → 270) are still unverified: the device was never rotated.
+3. The field is visibly painted. An all-paper card with a clean record would mean the `0x00RRGGBB` alpha trap
+   (Ruling 34) is real on device.
+   **Passed, so Ruling 34 is closed as "not live".** The card's field carries the scene's white-to-green gradient;
+   `Palette.opaque` in `blendOf` and at the strip is doing its job.
+4. ~~The eight band edges are hard, not feathered into the paper; if they bleed, set `p.isAntiAlias = false` for the
+   field loop only.~~ **Wrong premise, and acting on it would have broken the design.** The field is *meant* to
+   blend: `CardGeometry.fieldBlend` + `blendOf` interpolate between band centres, and the class doc calls that blend
+   "the ONLY permitted transformation of a measured colour". Measured: 283 colour changes down the centre column of
+   a 893-row field, spaced ~28px apart — that is the designed gradient, not anti-alias bleed. No `isAntiAlias`
+   change was made, and Task 7's finding 5 is closed as "not a defect".
 5. A second tap at the same minute leaves **two** raw JPEGs and two records, and the stack's data is intact.
+   **Passed.** Two shots inside 03:08 produced `…-attempt-2.json` and `…-attempt-3.json` plus
+   `2026-10-09--0308-attempt-2.jpg` and `…attempt-3.jpg` — the same shutter minute, distinguished only by the
+   attempt suffix Ruling 57 added. The card stays one-per-evening by design and was overwritten.
+
+Two things the pass surfaced that the JVM suite could not:
+
+- **The stopgap's preview had zero height.** `LinearLayout` defaults to HORIZONTAL, so
+  `LayoutParams(0, 0, 1f)` on the `PreviewView` meant "zero width, zero height, claim the leftover *width*" — an
+  invisible view, and the `SHOOT` button sat at `[0,0][1080,132]` under the status bar where `input tap` could not
+  reach it. Capture still worked, which is exactly why no test caught it: CameraX does not need a visible preview.
+  Fixed with `orientation = LinearLayout.VERTICAL` (button now at `[0,2208][1080,2340]`), because Step 8 asks a
+  person to aim at the sky and could not have.
+- **Whether the preview *renders* is still unknown.** `screencap` of the preview region returns one flat
+  `(48,48,48)` in both `PERFORMANCE` and `COMPATIBLE` implementation modes, while the same camera's JPEG holds real
+  scene pixels. That is consistent with a headless-swiftshader capture limitation rather than an app bug, but this
+  host cannot tell the two apart. Step 8 settles it by looking at the phone.
 
 - [ ] **Step 8: Shoot tonight's actual sky on the user's phone — the user's gate, not the agent's.** That card is
   the first datum of the record and no test substitutes for it. Two things the user must decide first: whether the
