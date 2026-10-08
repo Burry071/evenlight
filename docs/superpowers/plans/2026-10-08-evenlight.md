@@ -1502,7 +1502,8 @@ data class EveningRecord(
 **Files:** Create `core/.../CardGeometry.kt`, `app/src/main/java/com/burry071/evenlight/card/CardRenderer.kt`; Test `core/src/test/kotlin/.../CardGeometryTest.kt`
 
 **Interfaces:**
-- Produces: `object Palette` (packed ARGB ints, listed in Global Constraints);
+- Produces: `object Palette` (packed ARGB ints, listed in Global Constraints, plus `opaque(c): Int` — the one
+  crossing from the measurement packing `0x00RRGGBB` to the drawing packing `0xAARRGGBB`);
   `data class CardGeometry(val width: Int = 1080, val height: Int = 1440)` with `fieldHeight: Int`, `paperTop: Int`, `bandHeight: Double`, `stripHeight: Int`, `stripTop: Int`, `bandCentreY(i): Double`, `fieldBlend(y: Int): Float`, `inkOn(band: Int): Int`, `blendOf(bands: List<Int>, blend: Float): Int`;
   `class CardRenderer(displayFont: Typeface, textFont: Typeface) { fun render(bands: List<Int>, header: Header): Bitmap }` with `data class Header(name, dateLabel, sunAltitudeDeg, wording, winnerIndex: Int, neighbours: List<Int>, night: Boolean)`.
 - Consumed by: Tasks 8, 9, 10 (Python mirrors the same numbers).
@@ -1546,15 +1547,31 @@ class CardGeometryTest {
 
     @Test fun blendingTwoBandsAveragesTheChannelsAndRoundsHalfUp() {
         val b = MutableList(8) { Pixels.rgb(0, 0, 0) }.also { it[1] = Pixels.rgb(200, 100, 40) }
-        assertEquals(Pixels.rgb(0, 0, 0), g.blendOf(b, 0f))
-        assertEquals(Pixels.rgb(200, 100, 40), g.blendOf(b, 1f))
-        assertEquals(Pixels.rgb(100, 50, 20), g.blendOf(b, 0.5f))
+        assertEquals(Palette.opaque(Pixels.rgb(0, 0, 0)), g.blendOf(b, 0f))
+        assertEquals(Palette.opaque(Pixels.rgb(200, 100, 40)), g.blendOf(b, 1f))
+        assertEquals(Palette.opaque(Pixels.rgb(100, 50, 20)), g.blendOf(b, 0.5f))
         // The three cases above average to exact integers, so none of them exercises a rounding rule. Odd
         // channels land the average on exactly .5, which is where Kotlin and Python can part company: half-up
         // gives 101/51/21, banker's rounding gives 100/50/20. Task 10 mirrors this line in Python, so the tie
         // direction is cross-language contract, not local style.
         val odd = MutableList(8) { Pixels.rgb(0, 0, 0) }.also { it[1] = Pixels.rgb(201, 101, 41) }
-        assertEquals(Pixels.rgb(101, 51, 21), g.blendOf(odd, 0.5f))
+        assertEquals(Palette.opaque(Pixels.rgb(101, 51, 21)), g.blendOf(odd, 0.5f))
+    }
+
+    @Test fun everyColourTheRendererIsGivenIsOpaque() {
+        // BandSampler (T3) packs a measured band as 0x00RRGGBB, and that packing is the record's and Python's.
+        // Canvas and Compose read the high byte as alpha, so drawing one of those ints paints nothing: the
+        // field, the winner strip and the neighbour chips all vanish, and no int-equality test here can see it
+        // because none of them asks which byte is which. Palette.opaque is the single crossing point, so the
+        // alpha claim is checked where the crossing happens - and the first assertion checks the trap is real.
+        fun alpha(c: Int) = (c ushr 24) and 0xFF
+        val bands = List(8) { Pixels.rgb(201, 101, 41) }
+        assertEquals(0, alpha(bands[0]))
+        for (t in floatArrayOf(0f, 0.5f, 2.7f, 7f)) assertEquals(0xFF, alpha(g.blendOf(bands, t)))
+        assertEquals(0xFF, alpha(g.inkOn(bands[0])))
+        assertEquals(0xFF, alpha(Palette.opaque(bands[0])))
+        // Promoting must not shift or clip a channel, or the strip stops being the measured colour.
+        assertEquals(bands[0], Palette.opaque(bands[0]) and 0x00FFFFFF)
     }
 
     @Test fun aDarkWinnerStripCarriesPaper() {
@@ -1640,6 +1657,14 @@ object Palette {
     const val NIGHT_SURFACE = 0xFF17150F.toInt()
     const val NIGHT_TEXT = 0xFFE9E3D6.toInt()
     const val NIGHT_HAIRLINE = 0xFF332F26.toInt()
+
+    /**
+     * The one place the measurement domain becomes the drawing domain. `Pixels` packs a measured colour as
+     * 0x00RRGGBB (T3) because that is what the record stores and what Python reads, while `Canvas` and
+     * Compose read the high byte as alpha - so a measured colour drawn as-is paints nothing. Every palette
+     * constant above is already opaque; this is how a band becomes drawable without touching a channel.
+     */
+    fun opaque(c: Int): Int = (0xFF000000.toInt()) or (c and 0x00FFFFFF)
 }
 
 /**
@@ -1681,12 +1706,14 @@ data class CardGeometry(val width: Int = 1080, val height: Int = 1440) {
         fun mix(shift: Int) = Pixels.roundHalfUp(
             (((a shr shift) and 0xFF) * (1 - t) + ((b shr shift) and 0xFF) * t).toDouble()
         ).coerceIn(0, 255)
-        return Pixels.rgb(mix(16), mix(8), mix(0))
+        // Alpha is asserted here rather than left to the caller: the field is 893 drawn lines, and a blend that
+        // returned 0x00RRGGBB would make the whole card invisible while every int comparison here still passed.
+        return Palette.opaque(Pixels.rgb(mix(16), mix(8), mix(0)))
     }
 }
 ```
 
-- [ ] **Step 4: Run** → PASS, 14 tests (`:core` total 79).
+- [ ] **Step 4: Run** → PASS, 15 tests (`:core` total 80).
 
 - [ ] **Step 5: Implement `CardRenderer.kt`.** It draws; it does not decide. There is no saturation, contrast, tint, or white-balance call in this file, and adding one breaks the project's premise.
 
@@ -1732,7 +1759,7 @@ class CardRenderer(private val displayFont: Typeface, private val textFont: Type
         // `winner` and Task 10 re-derives cards in Python from that stored field. A renderer that decided for
         // itself could draw a strip that disagrees with the record it was built from - which is the one drift
         // this file exists to prevent, and "it draws, it does not decide" means exactly this line.
-        val winner = bands[header.winnerIndex]
+        val winner = Palette.opaque(bands[header.winnerIndex])
         p.color = winner
         c.drawRect(0f, geo.stripTop.toFloat(), geo.width.toFloat(), geo.fieldHeight.toFloat(), p)
         p.color = geo.inkOn(winner)
@@ -1747,7 +1774,7 @@ class CardRenderer(private val displayFont: Typeface, private val textFont: Type
 
         var x = geo.width - 56f - 60f * header.neighbours.size
         for (n in header.neighbours) {
-            p.color = n
+            p.color = Palette.opaque(n)          // measured anchors arrive as 0x00RRGGBB (T3 packing)
             c.drawRoundRect(x, geo.paperTop + 150f, x + 46f, geo.paperTop + 196f, 8f, 8f, p)
             x += 60f
         }
