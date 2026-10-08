@@ -10,7 +10,12 @@ sealed class Json {
     fun field(name: String): Json? = (this as? Obj)?.fields?.firstOrNull { it.first == name }?.second
     fun str(name: String): String? = (field(name) as? Str)?.v
     fun num(name: String): Double? = (field(name) as? Num)?.v
-    fun int(name: String): Int? = (field(name) as? Num)?.v?.toInt()
+    fun int(name: String): Int? = (field(name) as? Num)?.v?.let {
+        // Integral-or-nothing, not truncating. The only callers read stored integers (`winner`,
+        // `sun_altitude_deg`, `attempt`); a file holding 6.7 there is corrupt, and quietly reading it as 6
+        // would turn a broken record into a plausible one. NaN falls out here too, since NaN != anything.
+        if (it == it.toLong().toDouble()) it.toInt() else null
+    }
     fun bool(name: String): Boolean? = (field(name) as? Bool)?.v
     fun arr(name: String): List<Json>? = (field(name) as? Arr)?.items
 

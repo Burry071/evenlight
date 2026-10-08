@@ -1,6 +1,7 @@
 package com.burry071.evenlight.core
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -29,11 +30,10 @@ class JsonTest {
     }
 
     @Test fun nullIsNotSilentlyAnEmptyString() {
-        // This codec has no Json.Null case, so `null` has nowhere honest to land. Mapping it to Str("") - what
-        // an earlier draft of this plan did - made a record file containing `"wording": null` decode into a
-        // record with an empty wording instead of failing, which is invented data at the far edge of the
-        // pipeline. `null` is therefore not in this grammar: it falls through to number(), consumes no
-        // characters, and throws. Python's json.load reads such a file happily; the app must not.
+        // This codec has no Json.Null case, so `null` has nowhere honest to land - and a record file holding
+        // `"wording": null` must not read back as a record with an empty wording. `null` is therefore absent
+        // from this grammar: it falls through to number(), consumes no characters, and throws. Python's
+        // json.load reads such a file happily; the app cannot tell the two apart, so it must refuse.
         assertNull(Json.tryParse("null"))
         assertNull(Json.tryParse("{\"wording\":null}"))
     }
@@ -46,14 +46,40 @@ class JsonTest {
     }
 
     @Test fun controlCharactersSurviveARoundTrip() {
-        // The escape branch that no other test reaches: every named escape (newline, tab, carriage return) has
-        // its own case, so a string carrying a bare control character used the four-hex-digit branch with no
-        // coverage at all. Checked on this JDK before keeping the format string there: under an ar-EG locale
-        // `%04d` printed non-ASCII digits while `%04x` printed ASCII `00ff`, so hex output is not
-        // locale-parameterised the way decimal output is - this escape stays a pure function of its input.
-        // The branch is load-bearing, so it is now pinned.
+        // Python's strict reader refuses a raw control character inside a string, so escaping them is what
+        // keeps these files loadable. Named escapes own newline/tab/return, which leaves the four-hex-digit
+        // branch otherwise unexercised. `%04x` is not locale-parameterised the way `%04d` is, so its output
+        // stays a pure function of the input.
         val s = Json.Str("a\u0001b\u001Fc")
         assertEquals(s, Json.tryParse(Json.encode(s)))
         assertEquals("\"a\\u0001b\\u001fc\"", Json.encode(s))
+    }
+
+    @Test fun readsAFileWithSurroundingWhitespace() {
+        // A record file another tool terminated with a newline, or padded, is still ours to read. Task 8
+        // depends on this: it reads whatever came off the disk, not what the encoder wrote.
+        assertNotNull(Json.tryParse(" {\"a\":1}\r\n"))
+        assertEquals(Json.Obj(listOf("a" to Json.Num(1.0))), Json.tryParse("\t{\"a\":1} "))
+    }
+
+    @Test fun namedEscapesHaveAFixedWireForm() {
+        // The bytes on disk are the contract with Python, so the escape spellings are pinned rather than
+        // round-tripped - a round trip would still pass if a named escape quietly became a \uXXXX one.
+        val odd = "q\" s\\ n\n t\t r\r"
+        assertEquals("\"q\\\" s\\\\ n\\n t\\t r\\r\"", Json.encode(Json.Str(odd)))
+    }
+
+    @Test fun aNearMissLiteralIsRefused() {
+        // `literal()` matches a prefix, so without the check `[tru,]` would read as `[true,]`. A truncated
+        // word is corruption, not a value.
+        assertNull(Json.tryParse("[tru,]"))
+        assertNull(Json.tryParse("[fals,]"))
+    }
+
+    @Test fun emptyContainersParseAsEmpty() {
+        // The encoder writes `[]` for an empty list; if the parser stopped accepting it, a field that went
+        // empty would become an unreadable file instead of an empty list.
+        assertEquals(Json.Obj(emptyList()), Json.tryParse("{}"))
+        assertEquals(Json.Arr(emptyList()), Json.tryParse("[]"))
     }
 }

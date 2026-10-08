@@ -2,7 +2,7 @@ package com.burry071.evenlight.core
 
 /**
  * One evening. Written before the card is rendered, so a render failure cannot lose the
- * observation (spec section 11). Python reads the same file with json.load.
+ * observation. Python reads the same file with json.load.
  */
 data class EveningRecord(
     val date: String,
@@ -38,23 +38,31 @@ data class EveningRecord(
     )
 
     companion object {
+        /**
+         * Null for anything this app did not write. Two absences are tolerated - `attempt` and
+         * `clock_suspect` - because records written before those fields existed are otherwise unreadable; a
+         * field that is PRESENT but the wrong type is not, because inventing a value for it would produce a
+         * plausible record out of a corrupt file. That distinction is what `field(x) == null` is for below.
+         */
         fun decode(text: String): EveningRecord? {
             val o = Json.tryParse(text) as? Json.Obj ?: return null
             val bands = o.arr("bands") ?: return null
             if (bands.size != 8 || bands.any { it !is Json.Str }) return null
+            val winnerIndex = o.int("winner") ?: return null
+            if (winnerIndex !in bands.indices) return null
             return EveningRecord(
                 date = o.str("date") ?: return null,
                 shutter = o.str("shutter") ?: return null,
                 bandsHex = bands.map { (it as Json.Str).v },
-                winnerIndex = o.int("winner") ?: return null,
+                winnerIndex = winnerIndex,
                 name = o.str("name") ?: return null,
                 sunAltitudeDeg = o.int("sun_altitude_deg") ?: return null,
                 meanLuminance = o.num("mean_luminance") ?: return null,
                 wording = o.str("wording") ?: return null,
                 wordingSource = o.str("wording_source") ?: return null,
                 wordingRejected = o.bool("wording_rejected") ?: return null,
-                attempt = o.int("attempt") ?: 1,
-                clockSuspect = o.bool("clock_suspect") ?: false
+                attempt = if (o.field("attempt") == null) 1 else o.int("attempt") ?: return null,
+                clockSuspect = if (o.field("clock_suspect") == null) false else o.bool("clock_suspect") ?: return null
             )
         }
     }
