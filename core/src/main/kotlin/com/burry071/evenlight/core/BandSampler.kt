@@ -11,13 +11,17 @@ object BandSampler {
     const val BAND_COUNT = 8
 
     fun sample(pixels: IntArray, width: Int, height: Int): Bands {
+        // Before the size check: 0 == 0 * 0 satisfies it, and a zero height would then reach
+        // coerceIn(0.0, (sh - 1).toDouble()) = coerceIn(0.0, -1.0) inside the interpolator, which
+        // throws a stdlib "empty range" error instead of naming the bad argument.
+        require(width > 0 && height > 0) { "width and height must both be positive, got ${width}x${height}" }
         require(pixels.size == width * height) { "expected ${width * height} pixels, got ${pixels.size}" }
         val dw = TARGET_WIDTH
-        // Deviation from the brief (documented in task-3-report.md): without the min() clamp,
-        // width < TARGET_WIDTH makes dh > height, and the bilinear pass invents interpolated
-        // rows instead of repeating the nearest source row (golden: fewerRowsThanBands...).
-        // When width >= TARGET_WIDTH the clamp is the identity, so the downscale contract
-        // Python mirrors is bit-for-bit unchanged.
+        // The min(height, ...) clamp is load-bearing: width < TARGET_WIDTH makes height * dw / width
+        // > height, so dh grows past the row count and the bilinear pass INVENTS interpolated rows
+        // instead of repeating the nearest source row (golden: fewerRowsThanBands...). It is the
+        // identity for every width >= TARGET_WIDTH, so the downscale path Python mirrors in
+        // tools/python/skycard.py (T10) is bit-for-bit unchanged.
         val dh = max(1, min(height, Pixels.roundHalfUp(height.toDouble() * dw / width)))
         val small = bilinear(pixels, width, height, dw, dh)
 
