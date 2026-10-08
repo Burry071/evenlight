@@ -1963,15 +1963,17 @@ class StoreTest {
         // `2026-10-08-attempt-abc.json` parses to attempt 1, tying with the real bare-date file. Without the
         // filename as the comparator's third key that tie is settled by listFiles() order, so Task 10's
         // "latest attempt wins" would depend on the filesystem - which is the nondeterminism this store is
-        // supposed to have removed. What this assertion pins is the ORDER THE NAME IMPLIES. Whether it also kills
-        // the mutant "third key deleted" depends on what listFiles() happens to return on this filesystem, so the
-        // fix round must run that mutation and report which it got; claiming teeth without watching it fail is
-        // the mistake this project has now been warned about five times.
+        // supposed to have removed. What this assertion pins is the ORDER THE NAME IMPLIES, and the order the
+        // name implies is ["abc", "bare"]: "2026-10-08-attempt-abc" sorts before "2026-10-08.json" because '-'
+        // is 0x2D and '.' is 0x2E. Fix round 2 ran the mutant "third key deleted" and it SURVIVED on this host,
+        // because listFiles() happened to return the attempt-abc file first anyway. So this test documents the
+        // order; it does not prove the third key is load-bearing. Say that plainly rather than claiming teeth
+        // that were watched and not found.
         val store = temp()
         store.writeRecord(record("2026-10-08").copy(name = "bare"), 1)
         File(store.root, "evenlight/records/2026-10-08-attempt-abc.json")
             .writeText(record("2026-10-08").copy(name = "abc").encode())
-        assertEquals(listOf("bare", "abc"), store.readRecords().map { it.name })
+        assertEquals(listOf("abc", "bare"), store.readRecords().map { it.name })
     }
 
     @Test fun attemptOneIsTheBareDateFileAndAttemptThreeIsNamed() {
