@@ -1936,7 +1936,10 @@ class StoreTest {
         // "latest attempt wins" the attempts backwards. Sort by the (date, attempt) the NAME asserts.
         val store = temp()
         store.writeRecord(record("2026-10-08"), 1)
-        store.writeRecord(record("2026-10-08"), 2)
+        // `attempt` must be copied into the body as well as passed to writeRecord, because readRecords returns the
+        // decoded records: with the fixture's hard-coded attempt = 1 this would assert listOf(1, 2) against
+        // listOf(1, 1) and pass nothing but its own optimism. Production always writes the two together.
+        store.writeRecord(record("2026-10-08").copy(attempt = 2), 2)
         assertEquals(listOf(1, 2), store.readRecords().map { it.attempt })
     }
 
