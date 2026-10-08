@@ -1037,6 +1037,7 @@ verifier would be worse — a whitespace-only output would slide past `blank`.
 package com.burry071.evenlight.core
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -1065,11 +1066,10 @@ class JsonTest {
     }
 
     @Test fun nullIsNotSilentlyAnEmptyString() {
-        // This codec has no Json.Null case, so `null` has nowhere honest to land. Mapping it to Str("") - what
-        // an earlier draft of this plan did - made a record file containing `"wording": null` decode into a
-        // record with an empty wording instead of failing, which is invented data at the far edge of the
-        // pipeline. `null` is therefore not in this grammar: it falls through to number(), consumes no
-        // characters, and throws. Python's json.load reads such a file happily; the app must not.
+        // This codec has no Json.Null case, so `null` has nowhere honest to land - and a record file holding
+        // `"wording": null` must not read back as a record with an empty wording. `null` is therefore absent
+        // from this grammar: it falls through to number(), consumes no characters, and throws. Python's
+        // json.load reads such a file happily; the app cannot tell the two apart, so it must refuse.
         assertNull(Json.tryParse("null"))
         assertNull(Json.tryParse("{\"wording\":null}"))
     }
@@ -1082,15 +1082,41 @@ class JsonTest {
     }
 
     @Test fun controlCharactersSurviveARoundTrip() {
-        // The escape branch that no other test reaches: every named escape (newline, tab, carriage return) has
-        // its own case, so a string carrying a bare control character used the four-hex-digit branch with no
-        // coverage at all. Checked on this JDK before keeping the format string there: under an ar-EG locale
-        // `%04d` printed non-ASCII digits while `%04x` printed ASCII `00ff`, so hex output is not
-        // locale-parameterised the way decimal output is - this escape stays a pure function of its input.
-        // The branch is load-bearing, so it is now pinned.
+        // Python's strict reader refuses a raw control character inside a string, so escaping them is what
+        // keeps these files loadable. Named escapes own newline/tab/return, which leaves the four-hex-digit
+        // branch otherwise unexercised. `%04x` is not locale-parameterised the way `%04d` is, so its output
+        // stays a pure function of the input.
         val s = Json.Str("a\u0001b\u001Fc")
         assertEquals(s, Json.tryParse(Json.encode(s)))
         assertEquals("\"a\\u0001b\\u001fc\"", Json.encode(s))
+    }
+
+    @Test fun readsAFileWithSurroundingWhitespace() {
+        // A record file another tool terminated with a newline, or padded, is still ours to read. Task 8
+        // depends on this: it reads whatever came off the disk, not what the encoder wrote.
+        assertNotNull(Json.tryParse(" {\"a\":1}\r\n"))
+        assertEquals(Json.Obj(listOf("a" to Json.Num(1.0))), Json.tryParse("\t{\"a\":1} "))
+    }
+
+    @Test fun namedEscapesHaveAFixedWireForm() {
+        // The bytes on disk are the contract with Python, so the escape spellings are pinned rather than
+        // round-tripped - a round trip would still pass if a named escape quietly became a \uXXXX one.
+        val odd = "q\" s\\ n\n t\t r\r"
+        assertEquals("\"q\\\" s\\\\ n\\n t\\t r\\r\"", Json.encode(Json.Str(odd)))
+    }
+
+    @Test fun aNearMissLiteralIsRefused() {
+        // `literal()` matches a prefix, so without the check `[tru,]` would read as `[true,]`. A truncated
+        // word is corruption, not a value.
+        assertNull(Json.tryParse("[tru,]"))
+        assertNull(Json.tryParse("[fals,]"))
+    }
+
+    @Test fun emptyContainersParseAsEmpty() {
+        // The encoder writes `[]` for an empty list; if the parser stopped accepting it, a field that went
+        // empty would become an unreadable file instead of an empty list.
+        assertEquals(Json.Obj(emptyList()), Json.tryParse("{}"))
+        assertEquals(Json.Arr(emptyList()), Json.tryParse("[]"))
     }
 }
 ```
@@ -1130,12 +1156,88 @@ class EveningRecordTest {
     }
 
     @Test fun aNullFieldFailsTheDecodeRatherThanInventingAValue() {
-        // The record-level consequence of Json having no Null case. Substituting the enum's own deterministic
-        // output keeps this honest: a file a hand-editor (or another tool) turned `"model"` into `null` must be
-        // refused, not read back as an empty wording_source.
+        // A file whose `"model"` became `null` was edited by something other than this app, and decoding it
+        // into a record with an invented source is the failure this codec exists to avoid. The substitution
+        // targets the encoder's own output, so the test cannot pass by accident if the formatting changes.
         val corrupted = sample.encode().replace("\"wording_source\":\"model\"", "\"wording_source\":null")
         assertNotEquals(sample.encode(), corrupted)
         assertNull(EveningRecord.decode(corrupted))
+    }
+
+    @Test fun theWireFileIsExactlyWhatPythonReads() {
+        // Every key spelling, the order, the absence of spaces and the integral form of `winner` are the
+        // contract Task 10's Python reads. A symmetric rename of a key, or `"winner":6.0`, keeps every other
+        // test here green: Python would load the file happily and then do `bands[record["winner"]]` on a
+        // float, and the two languages would disagree about the same bytes forever.
+        assertEquals(
+            """{"date":"2026-10-08","shutter":"2026-10-08--1759","bands":["#1E2438","#2A3350","#3C4A67","#5C6B82","#8A8375","#B08A5E","#C2854A","#3A322A"],"winner":6,"name":"brassy","sun_altitude_deg":9,"mean_luminance":0.117,"wording":"brassy light holding at the edge of the wall","wording_source":"model","wording_rejected":false,"attempt":1,"clock_suspect":false}""",
+            sample.encode()
+        )
+    }
+
+    @Test fun aWrongTypeFieldFailsTheDecode() {
+        // Absent is tolerated for two fields; present-but-wrong-type is not. A default cannot tell them apart,
+        // so `{"clock_suspect":"no"}` would otherwise read back as "the clock was fine" - a corrupt record
+        // inventing the trustworthy value, out of the door that Task 12 counts through.
+        val w = sample.encode()
+        assertNull(EveningRecord.decode(w.replace("\"clock_suspect\":false", "\"clock_suspect\":\"no\"")))
+        assertNull(EveningRecord.decode(w.replace("\"attempt\":1", "\"attempt\":\"x\"")))
+        assertNull(EveningRecord.decode(w.replace("\"winner\":6", "\"winner\":\"6\"")))
+        assertNull(EveningRecord.decode(w.replace("\"wording_rejected\":false", "\"wording_rejected\":0")))
+    }
+
+    @Test fun aMissingFieldFailsTheDecode() {
+        val w = sample.encode()
+        for (frag in listOf("\"date\":\"2026-10-08\",", "\"wording_source\":\"model\",", "\"mean_luminance\":0.117,")) {
+            val broken = w.replace(frag, "")
+            assertNotEquals(w, broken)
+            assertNull(EveningRecord.decode(broken))
+        }
+    }
+
+    @Test fun bandsMustBeExactlyEightStrings() {
+        val w = sample.encode()
+        val seven = w.replace(",\"#3A322A\"", "")
+        assertNotEquals(w, seven)
+        assertNull(EveningRecord.decode(seven))
+        val nine = w.replace("\"#3A322A\"", "\"#3A322A\",\"#3A322A\"")
+        assertNotEquals(w, nine)
+        assertNull(EveningRecord.decode(nine))
+        // Not "throws": the element check is the only thing between a numeric band and a ClassCastException
+        // from the map below it, and decode's whole promise is null.
+        assertNull(EveningRecord.decode(w.replace("\"#1E2438\"", "123")))
+        assertNull(EveningRecord.decode(w.replace("\"#1E2438\"", "true")))
+    }
+
+    @Test fun anOutOfRangeWinnerFailsTheDecode() {
+        val w = sample.encode()
+        assertNull(EveningRecord.decode(w.replace("\"winner\":6", "\"winner\":99")))
+        assertNull(EveningRecord.decode(w.replace("\"winner\":6", "\"winner\":-1")))
+        assertNull(EveningRecord.decode(w.replace("\"winner\":6", "\"winner\":6.7")))
+    }
+
+    @Test fun aRecordCarryingNoDefaultValuesRoundTrips() {
+        // Every other test here uses a sample whose `attempt`, `clockSuspect` and `wordingRejected` happen to
+        // equal the two defaults and `false`, so a decode that hard-coded those three reads would stay green.
+        // `wording_rejected` is the honest "the model's line was refused" flag; hard-coding it would silently
+        // erase every rejection from the published count.
+        val r = sample.copy(
+            wordingSource = "none", wordingRejected = true, attempt = 3, clockSuspect = true,
+            winnerIndex = 0, sunAltitudeDeg = -4, meanLuminance = 0.0005
+        )
+        assertEquals(r, EveningRecord.decode(r.encode()))
+    }
+
+    @Test fun theTwoToleratedAbsencesAreDeliberate() {
+        // Written before `attempt` and `clock_suspect` existed, records still have to read. Pinning the
+        // tolerance says which way the defaults go: attempt 1, clock trustworthy.
+        val w = sample.encode()
+        val noAttempt = w.replace("\"attempt\":1,", "")
+        val noClock = w.replace(",\"clock_suspect\":false", "")
+        assertNotEquals(w, noAttempt)
+        assertNotEquals(w, noClock)
+        assertEquals(1, EveningRecord.decode(noAttempt)!!.attempt)
+        assertEquals(false, EveningRecord.decode(noClock)!!.clockSuspect)
     }
 }
 ```
@@ -1157,7 +1259,12 @@ sealed class Json {
     fun field(name: String): Json? = (this as? Obj)?.fields?.firstOrNull { it.first == name }?.second
     fun str(name: String): String? = (field(name) as? Str)?.v
     fun num(name: String): Double? = (field(name) as? Num)?.v
-    fun int(name: String): Int? = (field(name) as? Num)?.v?.toInt()
+    fun int(name: String): Int? = (field(name) as? Num)?.v?.let {
+        // Integral-or-nothing, not truncating. The only callers read stored integers (`winner`,
+        // `sun_altitude_deg`, `attempt`); a file holding 6.7 there is corrupt, and quietly reading it as 6
+        // would turn a broken record into a plausible one. NaN falls out here too, since NaN != anything.
+        if (it == it.toLong().toDouble()) it.toInt() else null
+    }
     fun bool(name: String): Boolean? = (field(name) as? Bool)?.v
     fun arr(name: String): List<Json>? = (field(name) as? Arr)?.items
 
@@ -1311,7 +1418,7 @@ package com.burry071.evenlight.core
 
 /**
  * One evening. Written before the card is rendered, so a render failure cannot lose the
- * observation (spec section 11). Python reads the same file with json.load.
+ * observation. Python reads the same file with json.load.
  */
 data class EveningRecord(
     val date: String,
@@ -1347,30 +1454,38 @@ data class EveningRecord(
     )
 
     companion object {
+        /**
+         * Null for anything this app did not write. Two absences are tolerated - `attempt` and
+         * `clock_suspect` - because records written before those fields existed are otherwise unreadable; a
+         * field that is PRESENT but the wrong type is not, because inventing a value for it would produce a
+         * plausible record out of a corrupt file. That distinction is what `field(x) == null` is for below.
+         */
         fun decode(text: String): EveningRecord? {
             val o = Json.tryParse(text) as? Json.Obj ?: return null
             val bands = o.arr("bands") ?: return null
             if (bands.size != 8 || bands.any { it !is Json.Str }) return null
+            val winnerIndex = o.int("winner") ?: return null
+            if (winnerIndex !in bands.indices) return null
             return EveningRecord(
                 date = o.str("date") ?: return null,
                 shutter = o.str("shutter") ?: return null,
                 bandsHex = bands.map { (it as Json.Str).v },
-                winnerIndex = o.int("winner") ?: return null,
+                winnerIndex = winnerIndex,
                 name = o.str("name") ?: return null,
                 sunAltitudeDeg = o.int("sun_altitude_deg") ?: return null,
                 meanLuminance = o.num("mean_luminance") ?: return null,
                 wording = o.str("wording") ?: return null,
                 wordingSource = o.str("wording_source") ?: return null,
                 wordingRejected = o.bool("wording_rejected") ?: return null,
-                attempt = o.int("attempt") ?: 1,
-                clockSuspect = o.bool("clock_suspect") ?: false
+                attempt = if (o.field("attempt") == null) 1 else o.int("attempt") ?: return null,
+                clockSuspect = if (o.field("clock_suspect") == null) false else o.bool("clock_suspect") ?: return null
             )
         }
     }
 }
 ```
 
-- [ ] **Step 5: Run both classes** (`--tests "*JsonTest*" --tests "*EveningRecordTest*"`) → PASS, 12 tests (7 + 5), 54 in `:core`. **Step 6: Commit** `git add core/src/main/kotlin/com/burry071/evenlight/core/Json.kt core/src/main/kotlin/com/burry071/evenlight/core/EveningRecord.kt core/src/test/kotlin/com/burry071/evenlight/core/JsonTest.kt core/src/test/kotlin/com/burry071/evenlight/core/EveningRecordTest.kt && git commit -m "feat: dependency-free JSON codec and the evening record"` (`git commit -am` stages nothing for four untracked files).
+- [ ] **Step 5: Run both classes** (`--tests "*JsonTest*" --tests "*EveningRecordTest*"`) → PASS, 23 tests (11 + 12), 65 in `:core`. **Step 6: Commit** `git add core/src/main/kotlin/com/burry071/evenlight/core/Json.kt core/src/main/kotlin/com/burry071/evenlight/core/EveningRecord.kt core/src/test/kotlin/com/burry071/evenlight/core/JsonTest.kt core/src/test/kotlin/com/burry071/evenlight/core/EveningRecordTest.kt && git commit -m "feat: dependency-free JSON codec and the evening record"` (`git commit -am` stages nothing for four untracked files).
 
 ---
 
