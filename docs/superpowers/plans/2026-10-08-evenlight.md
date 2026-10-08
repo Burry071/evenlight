@@ -76,7 +76,8 @@ evenlight/                       repo root = the current workspace
 │  ├─ data/{Store,Settings}.kt                                   T8
 │  ├─ capture/FrameSource.kt                                     T8
 │  ├─ card/CardRenderer.kt                                       T7
-│  ├─ wording/{EngineHolder,Wording}.kt                          T11
+│  ├─ wording/Wording.kt  (template only — T8)                    T8, T11
+│  ├─ wording/EngineHolder.kt                                     T11
 │  └─ ui/theme/{Color,Type,Theme}.kt  ui/{Tonight,Shoot,Card,Stack,Setup}Screen.kt
 │                                    ui/FramingGuide.kt          T9
 ├─ tools/python/{skycard.py,test_skycard.py}                     T10
@@ -1846,17 +1847,33 @@ class CardRenderer(private val displayFont: Typeface, private val textFont: Type
 
 This task must land tonight; every day of slippage costs the record an evening.
 
-**Files:** Create `app/.../data/{Store,Settings}.kt`, `app/.../capture/FrameSource.kt`, `app/.../EvenlightController.kt`; Test `app/src/test/java/com/burry071/evenlight/StoreTest.kt`
+**Files:** Create `app/.../data/{Store,Settings}.kt`, `app/.../capture/FrameSource.kt`, `app/.../wording/Wording.kt` (the template line only — T11 adds the prompt and the engine), `app/.../card/CardHeader.kt`, `app/.../EvenlightController.kt`; Modify `MainActivity.kt` (stopgap Shoot button); Test `app/src/test/java/com/burry071/evenlight/{StoreTest,CardHeaderTest}.kt`,
+`app/src/test/java/com/burry071/evenlight/capture/SampleSizeTest.kt`
 
 **Interfaces:**
-- Consumes: `BandSampler.sample` (T3), `Matcher.match` (T4), `CardRenderer.render` (T7), `SunWindow` (T2), `EveningRecord` (T6).
+- Consumes: `BandSampler.sample` (T3), `Matcher.match` (T4), `CardRenderer.render` + `CardRenderer.Header` (T7), `SunWindow.altitudeForDisplay` (T2), `EveningRecord` (T6), `Palette.opaque` (T7).
 - Produces:
-  - `class Store(root: File)` with `root: File`, `nextShutterName(now: LocalDateTime): String`, `attemptsFor(date: String): Int`, `writeRaw(jpeg: ByteArray, shutter: String): File`, `recordFile(date: String, attempt: Int): File`, `writeRecord(r: EveningRecord, attempt: Int): File`, `readRecords(): List<EveningRecord>`, `corruptRecords(): Int`, `eveningsWithCards(): Set<String>`, `cardFile(date: String): File`, `writeCard(date: String, png: ByteArray): File`, `wordingTotal(): Int`, `wordingRejected(): Int`, `loadSettings(): Settings`, `saveSettings(s: Settings)`
+  - `class Store(val root: File)` with `nextShutterName(now: LocalDateTime): String`, `attemptsFor(date: String): Int`, `writeRaw(jpeg: ByteArray, shutter: String, attempt: Int): File`, `recordFile(date: String, attempt: Int): File`, `writeRecord(r: EveningRecord, attempt: Int): File`, `readRecords(): List<EveningRecord>`, `corruptRecords(): Int`, `eveningsWithCards(): Set<String>`, `cardFile(date: String): File`, `writeCard(date: String, png: ByteArray): File`, `wordingTotal(): Int`, `wordingRejected(): Int`, `loadSettings(): Settings`, `saveSettings(s: Settings)`
   - `data class Settings(val place: String, val lat: Double, val lon: Double) { val isSet: Boolean }` with `Settings.UNSET`
-  - `class FrameSource(context: Context, executor: Executor) { var imageCapture: ImageCapture?; fun start(provider, previewView, lifecycleOwner); suspend fun take(rotationDegrees: Int): Still }`, `data class Still(val pixels: IntArray, val width: Int, val height: Int, val jpeg: ByteArray)`
-  - `class EvenlightController { suspend fun shoot(): Result<EveningRecord> }`
+  - `class FrameSource(context: Context, executor: Executor) { var imageCapture: ImageCapture?; fun start(provider, previewView, lifecycleOwner); suspend fun take(rotationDegrees: Int): Still }`, `data class Still(val pixels: IntArray, val width: Int, val height: Int, val jpeg: ByteArray)`, top-level `fun sampleSize(width: Int, height: Int): Int` and `const val MAX_SAMPLE_EDGE` in the same file
+  - `object Wording { fun template(name: String): String }` — `"$name light, measured from this sky"`, identical to the line T11 ships
+  - `fun headerFor(record: EveningRecord, match: Match): CardRenderer.Header` — top level in `card/CardHeader.kt`, **no Android imports in that file**
+  - `class EvenlightController(context, store, settings, frame, renderer, time: Timebase, displayRotation: () -> Int) { suspend fun shoot(): Result<EveningRecord> }`, `class Timebase(val wallClock: () -> LocalDateTime, val monotonicMillis: () -> Long)` with `Timebase.SYSTEM`
 
-- [ ] **Step 1: Write the failing test** for the naming and gap rules — the two things that decide whether the stack can show a hole.
+**Pre-flight rulings that change the task text below** (all were defects in the plan as written; the Ruling numbers are the ledger's):
+
+- The plan's `git commit -am` in Step 9 commits nothing, because every file this task adds is untracked. Step 9 now lists paths.
+- `Wording.template` was referenced here and created in Task 11, so Task 8 could not compile. It is created here, template only; Task 11 modifies the same object.
+- `headerFor(record, match)` was referenced twice and defined nowhere. It is defined here, and it must read `record.winnerIndex`, not `match.winnerIndex` — the record is the stored fact, and Task 10 re-derives cards from `winner`, so a renderer that recomputed could draw a strip that disagrees with the JSON it was built from.
+- `writeRaw(jpeg, shutter)` keyed the raw file on a name that is only precise to the minute, so a second shot inside the same minute silently overwrote the first JPEG. It now takes the attempt.
+- `Store(root)` promised `val root` but had `private val base`, so nothing downstream could find the directory it was told to use.
+- `readRecords`/`corruptRecords`/`loadSettings` can die on one hostile file instead of skipping it — see Step 3.
+- Clock-suspect detection was written against `SystemClock.elapsedRealtime()`, which a JVM unit test cannot drive (with `isReturnDefaultValues = true` it reads 0, so the guard would test as always-false). It is behind an injected `Timebase` now.
+- The camera path can rotate twice: CameraX rotates the saved JPEG by its target rotation, and `FrameSource.decode` rotates by hand. `setTargetRotation(Surface.ROTATION_0)` pins the file to sensor orientation so the manual rotation is the only one; Step 7's `height > width` check is the empirical proof.
+
+- [ ] **Step 1: Write the failing tests** for the naming and gap rules — the two things that decide whether the stack can show a hole — plus the two rules that decide whether the stack can *lie*: that one unreadable file cannot hide the readable ones, and that a second shot cannot destroy the first.
+
+`app/src/test/java/com/burry071/evenlight/StoreTest.kt`:
 
 ```kotlin
 package com.burry071.evenlight
@@ -1865,65 +1882,138 @@ import com.burry071.evenlight.core.EveningRecord
 import com.burry071.evenlight.data.Store
 import java.io.File
 import java.time.LocalDateTime
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class StoreTest {
-    private fun temp(): Pair<Store, File> {
-        val dir = File(System.getProperty("java.io.tmpdir"), "evenlight-test-" + System.nanoTime())
-        return Store(dir) to dir
+    private var dir: File? = null
+
+    @After fun tearDown() { dir?.deleteRecursively() }
+
+    private fun temp(): Store {
+        val d = File(System.getProperty("java.io.tmpdir"), "evenlight-test-" + System.nanoTime())
+        dir = d
+        return Store(d)
     }
 
     private fun record(date: String) = EveningRecord(
         date, "$date--1759", List(8) { "#000000" }, 0, "low", 9, 0.0,
-        "low light, measured from this sky", "template", false, 1, false
+        "low light, measured from this sky", "none", false, 1, false
     )
 
     @Test fun shutterNameIsDateAndTimeToTheMinute() {
-        val (store, dir) = temp()
-        assertEquals("2026-10-08--1759", store.nextShutterName(LocalDateTime.of(2026, 10, 8, 17, 59, 33)))
-        dir.deleteRecursively()
+        assertEquals("2026-10-08--1759", temp().nextShutterName(LocalDateTime.of(2026, 10, 8, 17, 59, 33)))
     }
 
     @Test fun aSecondShotTheSameEveningIsAttemptTwo() {
-        val (store, dir) = temp()
+        val store = temp()
         store.writeRecord(record("2026-10-08"), 1)
         assertEquals(1, store.attemptsFor("2026-10-08"))
         store.writeRecord(record("2026-10-08"), 2)
         assertEquals(2, store.attemptsFor("2026-10-08"))
-        dir.deleteRecursively()
     }
 
     @Test fun anEveningWithNoRecordIsNotAnEveningWithACard() {
-        val (store, dir) = temp()
-        assertFalse(store.eveningsWithCards().contains("2026-10-07"))
-        dir.deleteRecursively()
+        assertFalse(temp().eveningsWithCards().contains("2026-10-07"))
     }
 
     @Test fun corruptRecordsAreCountedNotDeleted() {
-        val (store, dir) = temp()
+        val store = temp()
         store.writeRecord(record("2026-10-08"), 1)
-        val bad = File(dir, "evenlight/records/2026-10-06.json").apply { writeText("{ truncated") }
+        val bad = File(store.root, "evenlight/records/2026-10-06.json").apply { writeText("{ truncated") }
         val ok = store.readRecords()
         assertEquals(1, ok.size)
         assertEquals("2026-10-08", ok.first().date)
         assertEquals(1, store.corruptRecords())
         assertTrue("a parse failure must not delete evidence", bad.exists())
-        dir.deleteRecursively()
+    }
+
+    @Test fun onePathologicallyDeepFileDoesNotHideTheGoodRecords() {
+        // Json.tryParse catches Exception, and a parser that recurses per bracket dies with StackOverflowError -
+        // an Error, not an Exception - so a single 200k-bracket file would propagate out of readRecords and the
+        // stack would show zero evenings instead of one good one. This test fails if Store catches Exception.
+        val store = temp()
+        store.writeRecord(record("2026-10-08"), 1)
+        File(store.root, "evenlight/records/2026-10-05.json").writeText("[".repeat(200_000))
+        assertEquals("2026-10-08", store.readRecords().single().date)
+        assertEquals(1, store.corruptRecords())
+    }
+
+    @Test fun aSecondShotInTheSameMinuteKeepsBothRawJpegs() {
+        // The shutter name is only precise to the minute, so two shots at 17:59:10 and 17:59:50 share it. If the
+        // raw file is keyed on the name alone the first evening's evidence is gone and only the card survives -
+        // the one loss this stack cannot show, because the raw JPEG is what proves the bands were measured.
+        val store = temp()
+        val a = store.writeRaw(byteArrayOf(1, 2, 3), "2026-10-08--1759", 1)
+        val b = store.writeRaw(byteArrayOf(4, 5, 6), "2026-10-08--1759", 2)
+        assertTrue(a.name != b.name)
+        assertEquals(3, a.readBytes().size)
+        assertArrayEquals(byteArrayOf(4, 5, 6), b.readBytes())
     }
 
     @Test fun settingsRoundTripKeepsTwoDecimalCoordinates() {
-        val (store, dir) = temp()
+        val store = temp()
         store.saveSettings(com.burry071.evenlight.data.Settings("hostel balcony", 31.52, 74.35))
         assertEquals(com.burry071.evenlight.data.Settings("hostel balcony", 31.52, 74.35), store.loadSettings())
-        dir.deleteRecursively()
+    }
+
+    @Test fun aTruncatedSettingsFileReadsAsUnsetRatherThanCrashing() {
+        val store = temp()
+        File(store.root, "evenlight/settings.json").writeText("{ truncated")
+        assertEquals(com.burry071.evenlight.data.Settings.UNSET, store.loadSettings())
     }
 }
 ```
 
-- [ ] **Step 2: Run** → FAIL, unresolved `Store`.
+Add `import org.junit.Assert.assertArrayEquals`.
+
+`app/src/test/java/com/burry071/evenlight/CardHeaderTest.kt` — the header is where the record's chosen band becomes a drawn colour, and nothing in `:core` can see a header that names the wrong band:
+
+```kotlin
+package com.burry071.evenlight
+
+import com.burry071.evenlight.core.EveningRecord
+import com.burry071.evenlight.core.Match
+import com.burry071.evenlight.card.headerFor
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
+import org.junit.Test
+
+class CardHeaderTest {
+    private val hex = listOf("#000000", "#111111", "#222222", "#333333", "#444444", "#555555", "#666666", "#777777")
+
+    private fun record(winner: Int) = EveningRecord(
+        "2026-10-08", "2026-10-08--1759", hex, winner, "amber", 9, 0.0,
+        "amber light, measured from this sky", "none", false, 1, false
+    )
+
+    @Test fun theHeaderCarriesTheBandTheRecordChoseNotTheOneTheMatcherWouldChooseAgain() {
+        // The Match here disagrees with the record on purpose. If headerFor reads match.winnerIndex, this test
+        // draws 3 where the record says 6, and the card contradicts the JSON next to it.
+        val h = headerFor(record(6), Match(3, "slate", listOf(2, 4)))
+        assertEquals(6, h.winnerIndex)
+        assertNotEquals(3, h.winnerIndex)
+    }
+
+    @Test fun theHeaderLabelsTheEveningInTheDesignsOwnWords() {
+        // The chips are match.neighbours - the bands adjacent to the winner, as measured ints in the 0x00RRGGBB
+        // packing T3 defines (CardRenderer promotes each through Palette.opaque at draw time, pinned in T7).
+        // `night` is false because no spec rule decides a dark *card*: the stack follows the system theme in T9,
+        // and wiring a card to the measured luminance would be a rule this project never wrote down.
+        val h = headerFor(record(6), Match(6, "amber", listOf(5, 7)))
+        assertEquals(listOf(5, 7), h.neighbours)
+        assertEquals("8 October", h.dateLabel)
+        assertEquals(9, h.sunAltitudeDeg)
+        assertEquals("amber light, measured from this sky", h.wording)
+        assertEquals(false, h.night)
+    }
+}
+```
+
+- [ ] **Step 2: Run** → FAIL, unresolved `Store` and `headerFor`.
 
 - [ ] **Step 3: Implement `Store.kt` + `Settings.kt`.** Plain files under `filesDir/evenlight`, no database, nothing that is not readable in a text editor.
 
@@ -1934,32 +2024,59 @@ import com.burry071.evenlight.core.EveningRecord
 import com.burry071.evenlight.core.Json
 import java.io.File
 import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
 
-class Store(root: File) {
+class Store(val root: File) {
     private val base = File(root, "evenlight").apply { mkdirs() }
     private val raw = File(base, "raw").apply { mkdirs() }
     private val cards = File(base, "cards").apply { mkdirs() }
     private val records = File(base, "records").apply { mkdirs() }
     private val settingsFile = File(base, "settings.json")
 
-    fun nextShutterName(now: LocalDateTime): String = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd--HHmm"))
+    /**
+     * Built from parts, not with DateTimeFormatter. This string becomes a filename, a record field, and the key
+     * Task 10's Python matches on, so it must be ASCII under every device locale. Measured on this host's JDK 21,
+     * `ofPattern("yyyy-MM-dd--HHmm")` under ar-EG-u-nu-arab and th-TH-u-ca-buddhist still emitted ASCII digits,
+     * so this is insurance against a locale/CLDR combination nobody here reproduced, not a proven defect - and no
+     * test on this host can give it teeth, because the formatter version passes whatever locale test is written.
+     * Same reasoning, same shape of fix as Pixels.HEX_DIGITS.
+     */
+    fun nextShutterName(now: LocalDateTime): String =
+        "${now.toLocalDate()}--${twoDigit(now.hour)}${twoDigit(now.minute)}"
+
+    private fun twoDigit(v: Int): String = if (v < 10) "0$v" else v.toString()
 
     fun attemptsFor(date: String): Int =
         records.listFiles()?.count { it.name == "$date.json" || it.name.startsWith("$date-attempt-") } ?: 0
 
-    fun writeRaw(jpeg: ByteArray, shutter: String): File = File(raw, "$shutter.jpg").apply { writeBytes(jpeg) }
+    /**
+     * The attempt is part of the name because the shutter name is only precise to the minute: two shots inside one
+     * minute would otherwise write the same file and lose the first evening's only evidence of what was measured.
+     */
+    fun writeRaw(jpeg: ByteArray, shutter: String, attempt: Int): File =
+        File(raw, "$shutter-attempt-$attempt.jpg").apply { writeBytes(jpeg) }
 
     fun recordFile(date: String, attempt: Int): File =
         if (attempt <= 1) File(records, "$date.json") else File(records, "$date-attempt-$attempt.json")
 
     fun writeRecord(r: EveningRecord, attempt: Int): File = recordFile(r.date, attempt).apply { writeText(r.encode()) }
 
+    /**
+     * Every file is read inside `catch (t: Throwable)`, not `Exception`: [Json.tryParse] recurses once per bracket
+     * and only catches Exception, so one hostile or fumbled 200k-`[` file raises StackOverflowError. Caught per
+     * file, that file is one corrupt record; caught nowhere, it empties the stack and Home says "no evenings yet"
+     * over a month of good JSON. `readText()` throws IOException for the same reason - a file can be mid-delete.
+     */
+    private fun decodeOrNull(f: File): EveningRecord? = try {
+        EveningRecord.decode(f.readText())
+    } catch (t: Throwable) {
+        null
+    }
+
     fun readRecords(): List<EveningRecord> =
-        records.listFiles()?.sortedBy { it.name }?.mapNotNull { EveningRecord.decode(it.readText()) } ?: emptyList()
+        records.listFiles()?.sortedBy { it.name }?.map { decodeOrNull(it) }?.filterNotNull() ?: emptyList()
 
     fun corruptRecords(): Int = records.listFiles()?.count {
-        it.name.endsWith(".json") && EveningRecord.decode(it.readText()) == null
+        it.name.endsWith(".json") && decodeOrNull(it) == null
     } ?: 0
 
     fun cardFile(date: String): File = File(cards, "$date.png")
@@ -1970,8 +2087,8 @@ class Store(root: File) {
     fun wordingRejected(): Int = readRecords().count { it.wordingRejected }
 
     fun loadSettings(): Settings {
-        val o = Json.tryParse(settingsFile.runCatching { readText() }.getOrNull() ?: return Settings.UNSET) as? Json.Obj
-            ?: return Settings.UNSET
+        val text = try { settingsFile.readText() } catch (t: Throwable) { return Settings.UNSET }
+        val o = try { Json.tryParse(text) as? Json.Obj } catch (t: Throwable) { null } ?: return Settings.UNSET
         return Settings(o.str("place") ?: "", o.num("lat") ?: 0.0, o.num("lon") ?: 0.0)
     }
 
@@ -1992,9 +2109,68 @@ data class Settings(val place: String, val lat: Double, val lon: Double) {
 }
 ```
 
-- [ ] **Step 4: Run** → PASS, 5 tests.
+```kotlin
+package com.burry071.evenlight.card
+
+import com.burry071.evenlight.core.EveningRecord
+import com.burry071.evenlight.core.Match
+import java.time.LocalDate
+
+/**
+ * No Android imports in this file, on purpose: the header is the last purely-data step between the stored record
+ * and the drawn card, so it stays unit-testable on a JVM while CardRenderer either side of it is not.
+ */
+private val MONTHS = listOf(
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December"
+)
+
+/**
+ * The card's date line, from the record the app already wrote - design/evenlight-mockups.html shows "9 October".
+ * Table-driven like Pixels.HEX_DIGITS, because LocalDate.format's pattern letters resolve against the default
+ * locale and a card header that silently switches to Urdu month names on a changed device is the same defect this
+ * project already refused once.
+ *
+ * winnerIndex and neighbours come from the record and the Match respectively. winnerIndex is read from the RECORD,
+ * never recomputed from `match`: the JSON is the stored fact, Task 10 re-derives cards from `winner`, and a header
+ * that disagreed with the record it was built from is the exact drift CardRenderer's comment in T7 forbids.
+ */
+fun headerFor(record: EveningRecord, match: Match): CardRenderer.Header {
+    val date = LocalDate.parse(record.date)
+    return CardRenderer.Header(
+        name = record.name,
+        dateLabel = "${date.dayOfMonth} ${MONTHS[date.monthValue - 1]}",
+        sunAltitudeDeg = record.sunAltitudeDeg,
+        wording = record.wording,
+        winnerIndex = record.winnerIndex,
+        neighbours = match.neighbours,
+        night = false
+    )
+}
+```
+
+If the JVM test cannot load `CardRenderer.Header` — it is a nested class of a file that imports four Android
+graphics types — move `data class Header(...)` out of `CardRenderer.kt` into this file and re-run. That move is
+the right shape anyway (a value type with no Android dependency does not belong nested in the one class that has
+four); it is not the first choice only because Task 7 is closed and reviewed.
+
+- [ ] **Step 4: Run** → PASS, 8 tests in `StoreTest` and 2 in `CardHeaderTest` (`:app` unit total 13, with the 3
+  pre-existing `ManifestTest`). `SampleSizeTest` arrives with Step 5, taking the `:app` total to 15.
 
 - [ ] **Step 5: Implement `FrameSource.kt`.** CameraX, back camera, one still, rotation applied by hand so `:core` never sees an Android image type. `BitmapFactory` does **not** apply EXIF, so rotate explicitly.
+
+Two decisions this file has to make, and the honest state of each:
+
+- **`setTargetRotation(Surface.ROTATION_0)`** is set once, at build time, instead of being left at CameraX's
+  default (the display's live rotation). Without it, CameraX rotates the saved JPEG by an amount that changes when
+  the user turns the phone, and `FrameSource.decode` then rotates it again by hand — an image that is upright or
+  a quarter-turned depending on which of the two paths got there first. Pinning the target makes the manual
+  rotation the only rotation.
+- **`rotationFor` is a hypothesis about this sensor's mounting, not a measured fact.** Back sensors are usually
+  mounted 90° clockwise from the device's natural orientation, which is what the table below encodes. Step 7 is
+  where it is checked, on the device, and the table is the single place to fix it. This matters more than it looks:
+  `BandSampler` splits the frame into eight *rows*, so a sideways frame does not produce an ugly card, it produces
+  bands read left-to-right through the sky — the wrong colours, stored as if measured.
 
 ```kotlin
 package com.burry071.evenlight.capture
@@ -2003,6 +2179,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
+import android.view.Surface
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
@@ -2017,6 +2194,19 @@ import kotlin.coroutines.suspendCoroutine
 
 data class Still(val pixels: IntArray, val width: Int, val height: Int, val jpeg: ByteArray)
 
+/** Sampling never needs 12 megapixels; drawing a card never needs the decoded pixels at all. */
+const val MAX_SAMPLE_EDGE = 1024
+
+/**
+ * Top level rather than a companion member, and this file's only JVM-pure function, so a unit test can reach it
+ * without loading a class that holds CameraX types. Powers of two only - that is what a decoder actually honours.
+ */
+fun sampleSize(width: Int, height: Int): Int {
+    var s = 1
+    while (maxOf(width, height) / s > MAX_SAMPLE_EDGE) s *= 2
+    return s
+}
+
 class FrameSource(private val context: Context, private val executor: Executor) {
 
     var imageCapture: ImageCapture? = null
@@ -2026,6 +2216,7 @@ class FrameSource(private val context: Context, private val executor: Executor) 
         imageCapture = ImageCapture.Builder()
             .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
             .setFlashMode(ImageCapture.FLASH_MODE_OFF)
+            .setTargetRotation(Surface.ROTATION_0)   // see the ruling above: the manual rotation must be the only one
             .build()
         val preview = Preview.Builder().build().apply { surfaceProvider = previewView.surfaceProvider }
         provider.unbindAll()
@@ -2050,7 +2241,11 @@ class FrameSource(private val context: Context, private val executor: Executor) 
 
     companion object {
         fun decode(jpeg: ByteArray, rotationDegrees: Int): Still {
-            var bmp = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size) ?: return Still(IntArray(0), 0, 0, jpeg)
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, bounds)
+            val opts = BitmapFactory.Options().apply { inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight) }
+            var bmp = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, opts)
+                ?: return Still(IntArray(0), 0, 0, jpeg)
             if (rotationDegrees != 0) {
                 bmp = Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, Matrix().apply { postRotate(rotationDegrees.toFloat()) }, true)
             }
@@ -2061,7 +2256,7 @@ class FrameSource(private val context: Context, private val executor: Executor) 
             return Still(px, w, h, jpeg)
         }
 
-        /** Display rotation -> the degrees the decoded bitmap must be turned to stand up. */
+        /** Display rotation -> the degrees the decoded bitmap must be turned to stand up. Unverified until Step 7. */
         fun rotationFor(displayRotation: Int): Int = when (displayRotation) {
             0 -> 90; 1 -> 0; 2 -> 180; else -> 270
         }
@@ -2069,23 +2264,132 @@ class FrameSource(private val context: Context, private val executor: Executor) 
 }
 ```
 
-- [ ] **Step 6: Implement `EvenlightController.shoot()`** — the whole nightly path in one readable function.
+`sampleSize` is a pure function on the JVM, so it gets its own unit file,
+`app/src/test/java/com/burry071/evenlight/capture/SampleSizeTest.kt`:
 
 ```kotlin
+package com.burry071.evenlight.capture
+
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class SampleSizeTest {
+    @Test fun aTwelveMegapixelFrameIsDecodedAtRoughlyOneThousandPixelsWide() {
+        // 4032/4 = 1008, which is under the edge, while 2 would still be 2016 and cost ~12 MB of ints.
+        assertEquals(4, sampleSize(4032, 3024))
+    }
+
+    @Test fun aFrameAlreadyUnderTheEdgeIsNotThrownAway() {
+        // The fixtures are 893 tall and Task 10 compares band-for-band; downscaling one would sample pixels that
+        // the golden file never had.
+        assertEquals(1, sampleSize(893, 893))
+        assertEquals(1, sampleSize(1024, 1024))
+        assertEquals(2, sampleSize(1025, 1025))
+    }
+}
+```
+
+A 48 MB `IntArray` on the user's phone is the difference between a card and a silent OOM at the shutter, and the
+low-end AVD is here to find that, not to be nice. The downscale touches only the pixels handed to `BandSampler`:
+the stored raw JPEG stays full resolution, because it is the evidence, and Task 10 reads bands from the record's
+`bands` field rather than re-sampling the JPEG — which is also why a sampling size here cannot break the
+cross-language equivalence.
+
+- [ ] **Step 6: Implement `Wording.kt` (template only), then `EvenlightController.kt`** — the whole nightly path in one readable function.
+
+`app/src/main/java/com/burry071/evenlight/wording/Wording.kt` — Task 8 needs the line, so it owns the file's first
+version; Task 11 adds `SYSTEM` and `prompt` to this same object and changes nothing here:
+
+```kotlin
+package com.burry071.evenlight.wording
+
+object Wording {
+    /**
+     * The fallback line, and tonight's only line. It carries the name the matcher chose and claims nothing else,
+     * so it passes Verifier.check by construction (spec section 7).
+     */
+    fun template(name: String): String = "$name light, measured from this sky"
+}
+```
+
+```kotlin
+package com.burry071.evenlight
+
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Typeface
+import com.burry071.evenlight.card.CardRenderer
+import com.burry071.evenlight.card.headerFor
+import com.burry071.evenlight.capture.FrameSource
+import com.burry071.evenlight.core.BandSampler
+import com.burry071.evenlight.core.EveningRecord
+import com.burry071.evenlight.core.GeoPoint
+import com.burry071.evenlight.core.Matcher
+import com.burry071.evenlight.core.Pixels
+import com.burry071.evenlight.core.SunWindow
+import com.burry071.evenlight.data.Settings
+import com.burry071.evenlight.data.Store
+import com.burry071.evenlight.wording.Wording
+import java.io.ByteArrayOutputStream
+import java.time.Duration
+import java.time.LocalDateTime
+import java.time.ZoneId
+import java.time.ZoneOffset
+import kotlin.math.abs
+
+/**
+ * Two clocks, injected rather than called directly. `SystemClock.elapsedRealtime()` was the obvious monotonic
+ * source and is the wrong one: with `unitTests.isReturnDefaultValues = true` it reads 0 in every JVM test, so a
+ * drift test would pass by proving nothing. System.nanoTime() is monotonic, JVM-visible, and only its deltas are
+ * used.
+ */
+class Timebase(val wallClock: () -> LocalDateTime, val monotonicMillis: () -> Long) {
+    companion object {
+        val SYSTEM = Timebase({ LocalDateTime.now() }, { System.nanoTime() / 1_000_000 })
+    }
+}
+
+class EvenlightController(
+    private val store: Store,
+    private val settings: Settings,
+    private val frame: FrameSource,
+    private val renderer: CardRenderer,
+    private val time: Timebase,
+    private val displayRotation: () -> Int
+) {
+
+    /**
+     * Narrowest wall-clock guard this task can justify: the two reads bracket one shutter press, so a jump *during*
+     * the capture - an NTP correction landing at 17:59 - is caught, and a clock rewound last Tuesday is not. What
+     * actually defends the stack's order against a rewound clock is the shutter name stored in every record; this
+     * flag marks the row rather than silently reordering it (spec section 11).
+     */
+    private fun clockSuspect(now: LocalDateTime, monoBefore: Long): Boolean {
+        val wallAdvance = Duration.between(now, time.wallClock()).toMillis()
+        val monoAdvance = time.monotonicMillis() - monoBefore
+        return wallAdvance < 0 || abs(wallAdvance - monoAdvance) > 5_000
+    }
+
     suspend fun shoot(): Result<EveningRecord> = runCatching {
-        val now = LocalDateTime.now()
-        val bootMark = SystemClock.elapsedRealtime()
-        val still = frame.take(FrameSource.rotationFor(previewRotation()))
+        // No coordinates, no card. The sun line would otherwise print an altitude computed for the Gulf of Guinea
+        // over a sky in Lahore: a number the app did not measure, which this project does not put on a card.
+        check(settings.isSet) { "no place set yet" }
+
+        val monoBefore = time.monotonicMillis()
+        val now = time.wallClock()
+
+        val still = frame.take(FrameSource.rotationFor(displayRotation()))
         require(still.pixels.isNotEmpty()) { "capture produced no pixels" }
 
         val bands = BandSampler.sample(still.pixels, still.width, still.height)
         val match = Matcher.match(bands.ordered)
-        val geoPoint = GeoPoint(settings.lat, settings.lon)
         val altitude = SunWindow.altitudeForDisplay(
-            now.atZone(ZoneId.systemDefault()).withZoneSameInstant(ZoneOffset.UTC).toLocalDateTime(), geoPoint
+            now.atZone(ZoneId.systemDefault()).withZoneSameInstant(ZoneOffset.UTC).toLocalDateTime(),
+            GeoPoint(settings.lat, settings.lon)
         )
         val date = now.toLocalDate().toString()
         val attempt = store.attemptsFor(date) + 1
+        val suspect = clockSuspect(now, monoBefore)
 
         val record = EveningRecord(
             date = date,
@@ -2095,33 +2399,154 @@ class FrameSource(private val context: Context, private val executor: Executor) 
             name = match.name,
             sunAltitudeDeg = altitude,
             meanLuminance = bands.meanLuminance,
-            wording = Wording.template(match.name),        // Task 11 replaces this with the model line
-            wordingSource = "none",
+            wording = Wording.template(match.name),
+            wordingSource = "none",     // the engine arrives in T11; "none" means it was never consulted
             wordingRejected = false,
             attempt = attempt,
-            clockSuspect = clockDrifted(now, bootMark)
+            clockSuspect = suspect
         )
-        store.writeRaw(still.jpeg, record.shutter)
-        store.writeRecord(record, attempt)                 // record BEFORE render: a render failure must not lose the evening
-        store.writeCard(date, renderer.render(bands.ordered, headerFor(record, match)).pngBytes())
+        store.writeRaw(still.jpeg, record.shutter, attempt)
+        store.writeRecord(record, attempt)              // record BEFORE render: a render failure must not lose the evening
+        store.writeCard(date, pngBytes(renderer.render(bands.ordered, headerFor(record, match))))
         record
     }
+
+    private fun pngBytes(bmp: Bitmap): ByteArray {
+        val out = ByteArrayOutputStream()
+        // Quality is meaningless for PNG; 100 says so rather than leaving a number that looks like a choice.
+        bmp.compress(Bitmap.CompressFormat.PNG, 100, out)
+        bmp.recycle()
+        return out.toByteArray()
+    }
+
+    companion object {
+        /**
+         * The device-shaped controller. The typefaces are the platform defaults because Fraunces and Instrument
+         * Sans only land in Task 9; the strip name is laid out for Fraunces at 116f, so with DEFAULT it may crowd
+         * the strip. That is the known cost of landing the nightly path tonight, and Task 9's fonts retire it.
+         */
+        fun forDevice(activity: Context, store: Store, settings: Settings, frame: FrameSource): EvenlightController =
+            EvenlightController(
+                context = activity, store = store, settings = settings, frame = frame,
+                renderer = CardRenderer(Typeface.DEFAULT, Typeface.SANS_SERIF),
+                time = Timebase.SYSTEM,
+                displayRotation = {
+                    @Suppress("DEPRECATION")
+                    (activity as? android.app.Activity)?.windowManager?.defaultDisplay?.rotation ?: 0
+                }
+            )
+    }
+}
 ```
 
-`clockDrifted` compares wall-clock advance against `elapsedRealtime` since boot; a backwards jump or a timezone edit marks the row rather than silently reordering the stack (spec §11). `pngBytes()` is `Bitmap.compress(PNG, 100, ByteArrayOutputStream)` — quality is irrelevant for PNG and 100 makes that explicit.
+`runCatching` swallows `Throwable`, which is right here and worth stating why: a crash at the shutter must become a
+visible failure on screen, not a closed app, and the record written before the render is already safe on disk.
 
-- [ ] **Step 7: Scripted emulator pass.** Grant camera, open, tap Shoot, then:
+- [ ] **Step 6b: Wire a stopgap Shoot button into `MainActivity`.** Task 8's Step 7 is a device pass that *taps
+  Shoot*, and Task 9 is the screen that properly owns it — so without this the nightly path cannot be exercised at
+  all, and the plan's premise ("first real card tonight") dies on a missing button. Keep it minimal and delete it in
+  Task 9: request `CAMERA` if needed, bind `FrameSource` once the provider resolves, and show the returned record's
+  name and bands as plain text so a failure is legible without a logcat.
+
+```kotlin
+class MainActivity : ComponentActivity() {
+    private lateinit var frame: FrameSource
+    private lateinit var controller: EvenlightController
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val store = Store(filesDir)
+        // Task 9's Setup screen owns this. Until then a device can be pointed at the sky by writing
+        // files/evenlight/settings.json through adb, and a phone with no coordinates simply refuses to shoot.
+        val settings = store.loadSettings()
+        frame = FrameSource(this, mainExecutor)
+        controller = EvenlightController.forDevice(this, store, settings, frame)
+        val preview = PreviewView(this)
+        val shoot = Button(this).apply { text = "Shoot" }
+        setContentView(LinearLayout(this).apply {
+            addView(preview, LinearLayout.LayoutParams(0, 0, 1f))
+            addView(shoot, LinearLayout.LayoutParams(-1, -2))
+        })
+        lifecycleScope.launch {
+            val provider = ProcessCameraProvider.awaitInstance(applicationContext)
+            frame.start(provider, preview, this@MainActivity)
+        }
+        shoot.setOnClickListener {
+            lifecycleScope.launch {
+                controller.shoot().fold(
+                    onSuccess = { setContentView(TextView(this@MainActivity).apply { text = "${it.name} / ${it.bandsHex}" }) },
+                    onFailure = { setContentView(TextView(this@MainActivity).apply { text = "failed: ${it.message}" }) }
+                )
+            }
+        }
+    }
+}
+```
+
+This block is deliberately ugly — `setContentView` twice, no state, no theme. Task 9 replaces the whole file with
+the Compose screens, and nothing here is a contract except `EvenlightController.forDevice`. `awaitInstance` needs
+`androidx.camera:camera-lifecycle`, which is already a dependency; if it is not resolvable offline, fall back to
+`ProcessCameraProvider.getInstance(this).get()` on the executor and say so in the report. `lifecycleScope` needs
+`androidx.lifecycle:lifecycle-runtime-ktx`, which arrives transitively with what is already here — if the compile
+cannot see it, add the explicit dependency **only if it is already in the Gradle cache**, and report that you did;
+do not run a download.
+
+- [ ] **Step 7: Scripted emulator pass — run by the controller, not the implementer.** The device pass needs a
+  started emulator, a granted camera, and a judgment about an image; it is the one step in this plan that is not a
+  code-and-test cycle. Everything before it (Steps 1–6, plus `:app:assembleDebug` and `:core` + `:app` unit suites
+  green) is the implementer's; Step 7 onward is the controller's.
+
+`adb pull` cannot read an app-private directory, so the earlier version of this step (`adb pull
+/data/data/com.burry071.evenlight/...`) failed for a reason unrelated to the app. `run-as … tar` to stdout, read
+locally:
 
 ```bash
 MSYS_NO_PATHCONV=1 adb shell run-as com.burry071.evenlight ls -l files/evenlight/records
 MSYS_NO_PATHCONV=1 adb shell run-as com.burry071.evenlight cat files/evenlight/records/$(date +%F).json
-MSYS_NO_PATHCONV=1 adb pull /data/data/com.burry071.evenlight/files/evenlight/cards /d/Temp/cards
+MSYS_NO_PATHCONV=1 adb exec-out "run-as com.burry071.evenlight tar c files/evenlight" | tar x -C /d/Temp
 ```
-Expected: one JSON with 8 hex bands and a plausible `name`, and one 1080×1440 PNG that is **not sideways** (if it is, `rotationFor` is wrong for this device — fix it here, not later) and whose bands resemble what the lens saw.
 
-- [ ] **Step 8: Shoot tonight's actual sky on the user's phone.** That card is the first datum of the record and no test substitutes for it.
+Then, before the first shot, give the emulator a place, since no Setup screen exists yet:
 
-- [ ] **Step 9: Commit** `git commit -am "feat: capture to card, with the record written before the render"`.
+```bash
+MSYS_NO_PATHCONV=1 adb shell "run-as com.burry071.evenlight sh -c 'mkdir -p files/evenlight && printf \x27{\"place\":\"emulator\",\"lat\":31.52,\"lon\":74.35}\x27 > files/evenlight/settings.json'"
+```
+
+Checks, in order, each one closing something the JVM suite cannot:
+1. One JSON with 8 hex bands, a plausible `name`, `wording_source` `"none"`, `attempt` 1.
+2. `file /d/Temp/evenlight/cards/*.png` reports **1080x1440** — width less than height. This is the empirical close
+   for `rotationFor` (a hypothesis, Step 5) and, through it, for the bands being read down the sky rather than
+   across it.
+3. The PNG's eight bands resemble what the emulator's synthetic camera showed, and the field is visibly painted.
+   An all-paper card with a clean record means the `0x00RRGGBB` alpha trap (Ruling 34) is real on device: the fix is
+   that every measured colour reaches drawing through `Palette.opaque`, which `CardRenderer` already does — so if it
+   *is* blank, the bug is in that crossing and this is where it surfaces.
+4. The eight band edges are hard, not feathered into the paper. If they bleed, set `p.isAntiAlias = false` for the
+   field loop only (Task 7 finding 5, deliberately left open); strip, chips and text keep anti-aliasing.
+5. A second tap at the same minute leaves **two** raw JPEGs and two records, and the stack's data is intact.
+
+- [ ] **Step 8: Shoot tonight's actual sky on the user's phone — the user's gate, not the agent's.** That card is
+  the first datum of the record and no test substitutes for it. Two things the user must decide first: whether the
+  phone is attached for install, and the real `place`/`lat`/`lon` (the same coordinates rule applies — a sun
+  altitude for a city nobody named is a number the app did not measure). If either is missing, report Step 7's
+  result and stop; do not substitute a synthetic "first evening".
+
+- [ ] **Step 9: Commit** with explicit paths — `-a` would stage none of the new files and still exit 0:
+
+```bash
+git add app/src/main/java/com/burry071/evenlight/data/Store.kt \
+        app/src/main/java/com/burry071/evenlight/data/Settings.kt \
+        app/src/main/java/com/burry071/evenlight/card/CardHeader.kt \
+        app/src/main/java/com/burry071/evenlight/capture/FrameSource.kt \
+        app/src/main/java/com/burry071/evenlight/wording/Wording.kt \
+        app/src/main/java/com/burry071/evenlight/EvenlightController.kt \
+        app/src/main/java/com/burry071/evenlight/MainActivity.kt \
+        app/src/test/java/com/burry071/evenlight/StoreTest.kt \
+        app/src/test/java/com/burry071/evenlight/CardHeaderTest.kt \
+        app/src/test/java/com/burry071/evenlight/capture/SampleSizeTest.kt
+git status --short   # nothing untracked may remain from this task
+git commit -m "feat: capture to card, with the record written before the render"
+```
 
 ---
 
@@ -2483,7 +2908,9 @@ Expected: eight hex values, `"winner": 6`, `"name": "brassy"`, a 1080×1440 PNG,
 
 ## Task 11: `Wording` — the model's one line, optional by construction
 
-**Files:** Create `app/.../wording/{Wording,EngineHolder}.kt`; Modify `EvenlightController.kt`; Test `app/src/test/java/com/burry071/evenlight/wording/WordingTest.kt`
+**Files:** Modify `app/.../wording/Wording.kt` (created in Task 8 with `template` only — add `SYSTEM` and `prompt`,
+leave `template` exactly as it is), Create `app/.../wording/EngineHolder.kt`; Modify `EvenlightController.kt`; Test
+`app/src/test/java/com/burry071/evenlight/wording/WordingTest.kt`
 
 **Interfaces:**
 - Consumes: `Match.name` (T4), `Verifier.check` (T5), `Store.wordingRejected()`.
@@ -2527,7 +2954,9 @@ class WordingTest {
 }
 ```
 
-- [ ] **Step 2: Run** → FAIL, unresolved `Wording`.
+- [ ] **Step 2: Run** → FAIL: `Wording.SYSTEM` and `Wording.prompt` are unresolved. `templateCarriesTheNameAnd…`
+  and `templateContainsNoDigit` already pass, because Task 8 shipped `template` — that is Ruling 40, and those two
+  tests are then the guard on it, not a failure to fix.
 
 - [ ] **Step 3: Implement `Wording.kt`.**
 
