@@ -64,7 +64,14 @@ class EveningRecordTest {
 
     @Test fun aMissingFieldFailsTheDecode() {
         val w = sample.encode()
-        for (frag in listOf("\"date\":\"2026-10-08\",", "\"wording_source\":\"model\",", "\"mean_luminance\":0.117,")) {
+        // Every field except the two whose absence is deliberately tolerated. Each of these guards is a
+        // `?: return null`; replace one with a default and this is the test that notices.
+        val frags = listOf(
+            "\"date\":\"2026-10-08\",", "\"shutter\":\"2026-10-08--1759\",", "\"name\":\"brassy\",",
+            "\"wording\":\"brassy light holding at the edge of the wall\",",
+            "\"wording_source\":\"model\",", "\"mean_luminance\":0.117,"
+        )
+        for (frag in frags) {
             val broken = w.replace(frag, "")
             assertNotEquals(w, broken)
             assertNull(EveningRecord.decode(broken))
