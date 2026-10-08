@@ -1959,6 +1959,21 @@ class StoreTest {
         assertEquals("from-the-named-file", read.last().name)
     }
 
+    @Test fun aNameTheAppWouldNeverWriteStillGetsADeterministicPlace() {
+        // `2026-10-08-attempt-abc.json` parses to attempt 1, tying with the real bare-date file. Without the
+        // filename as the comparator's third key that tie is settled by listFiles() order, so Task 10's
+        // "latest attempt wins" would depend on the filesystem - which is the nondeterminism this store is
+        // supposed to have removed. What this assertion pins is the ORDER THE NAME IMPLIES. Whether it also kills
+        // the mutant "third key deleted" depends on what listFiles() happens to return on this filesystem, so the
+        // fix round must run that mutation and report which it got; claiming teeth without watching it fail is
+        // the mistake this project has now been warned about five times.
+        val store = temp()
+        store.writeRecord(record("2026-10-08").copy(name = "bare"), 1)
+        File(store.root, "evenlight/records/2026-10-08-attempt-abc.json")
+            .writeText(record("2026-10-08").copy(name = "abc").encode())
+        assertEquals(listOf("bare", "abc"), store.readRecords().map { it.name })
+    }
+
     @Test fun attemptOneIsTheBareDateFileAndAttemptThreeIsNamed() {
         // The naming convention is what eveningsWithCards and Task 10 both read; without this assertion the
         // `attempt <= 1` branch could become `< 1` and every test above would still pass.
@@ -2121,16 +2136,20 @@ class Store(val root: File) {
 
     fun readRecords(): List<EveningRecord> =
         records.listFiles()?.mapNotNull { f -> decodeOrNull(f)?.let { f to it } }
-            ?.sortedWith(compareBy({ orderOf(it.first.name).first }, { orderOf(it.first.name).second }))
+            ?.sortedWith(compareBy({ orderOf(it.first.name).first }, { orderOf(it.first.name).second }, { it.first.name }))
             ?.map { it.second } ?: emptyList()
 
     /**
      * The (date, attempt) a filename asserts. Ordering comes from the NAME because the name is what recordFile
      * wrote: sorting by the decoded pair instead would let a body whose `attempt` field is missing - decode defaults
-     * it to 1 - or whose `date` was edited outside the app decide the stack's order, and `sortedBy` being stable
-     * would leave those ties in whatever order listFiles() happened to return. Nothing here filters: a file that
-     * decodes is a record and shows up, and an evening that vanishes from this list is the exact failure this
+     * it to 1 - or whose `date` was edited outside the app decide the stack's order. Nothing here filters: a file
+     * that decodes is a record and shows up, and an evening that vanishes from this list is the exact failure this
      * store exists to prevent.
+     *
+     * The filename is the third key in the comparator above, and that is not decoration. A name the app would
+     * never write - `2026-10-08-attempt-abc.json`, say - parses to attempt 1 here and would then tie with the real
+     * bare-date file, leaving `listFiles()` order to decide which one Task 10's "latest attempt wins" picks. With
+     * the name in the key the order is total and the same on every filesystem.
      */
     private fun orderOf(name: String): Pair<String, Int> {
         val base = name.removeSuffix(".json")
@@ -2217,8 +2236,8 @@ graphics types — move `data class Header(...)` out of `CardRenderer.kt` into t
 the right shape anyway (a value type with no Android dependency does not belong nested in the one class that has
 four); it is not the first choice only because Task 7 is closed and reviewed.
 
-- [ ] **Step 4: Run** → PASS, 11 tests in `StoreTest` and 2 in `CardHeaderTest` (`:app` unit total 16, with the 3
-  pre-existing `ManifestTest`). `SampleSizeTest` arrives with Step 5, taking the `:app` total to 18.
+- [ ] **Step 4: Run** → PASS, 12 tests in `StoreTest` and 2 in `CardHeaderTest` (`:app` unit total 17, with the 3
+  pre-existing `ManifestTest`). `SampleSizeTest` arrives with Step 5, taking the `:app` total to 19.
 
 - [ ] **Step 5: Implement `FrameSource.kt`.** CameraX, back camera, one still, rotation applied by hand so `:core` never sees an Android image type. `BitmapFactory` does **not** apply EXIF, so rotate explicitly.
 
@@ -2432,14 +2451,17 @@ class EvenlightController(
 
     /**
      * Two reads of one wall clock around one shutter press, so what this catches is a jump that lands *during* the
-     * capture - an NTP correction at 17:59 - and what it cannot catch is a clock rewound last Tuesday. What
-     * actually defends the stack's order against that is the shutter name stored in every record; this flag marks
-     * the row rather than silently reordering it (spec section 11).
+     * capture - an NTP correction at 17:59 - and what it cannot catch is a clock rewound before the app started.
      *
-     * A third thing trips it, and pretending otherwise would be a false claim in a comment: System.nanoTime() is
-     * CLOCK_MONOTONIC and does not advance while the device sleeps, while LocalDateTime.now() does. A phone that
-     * dozed between the two reads shows wall time gone by and monotonic time not, and the row is marked suspect
-     * for a reason that is not a clock fault. That is acceptable because the flag is a mark, not a diagnosis.
+     * It catches less than that, and the earlier version of this comment was wrong to imply otherwise: it said the
+     * stored shutter name is what defends the stack's order, but readRecords() orders by the filename, and the
+     * filename is built from this same wall clock. A clock rewound last Tuesday therefore really does move that
+     * evening's row in the stack, and nothing in the app notices. So this flag is a mark on one row saying "the
+     * two clocks disagreed here" (spec section 11) - not a guard on the stack, and not a diagnosis either.
+     *
+     * A third thing trips it: System.nanoTime() is CLOCK_MONOTONIC and does not advance while the device sleeps,
+     * while LocalDateTime.now() does, so a phone that dozed between the two reads shows wall time gone by and
+     * monotonic time not, and the row is marked for a reason that is not a clock fault at all.
      */
     private fun clockSuspect(now: LocalDateTime, monoBefore: Long): Boolean {
         val wallAdvance = Duration.between(now, time.wallClock()).toMillis()
