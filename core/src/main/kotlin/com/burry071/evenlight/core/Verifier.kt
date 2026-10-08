@@ -21,7 +21,8 @@ object Verifier {
         val words = line.trim().split(Regex("\\s+"))
         if (words.size > 8) return Verdict.Reject("too-long")
         if (words.size < 4) return Verdict.Reject("too-short")
-        if (line.split(Regex("[^a-z]+")).none { it == name }) return Verdict.Reject("name absent")
+        val tokens = line.split(Regex("[^a-z]+"))
+        if (tokens.none { it == name }) return Verdict.Reject("name absent")
         return Verdict.Accept
     }
 }

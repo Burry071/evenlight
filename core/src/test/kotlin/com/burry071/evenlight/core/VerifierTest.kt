@@ -23,6 +23,15 @@ class VerifierTest {
         }
     }
 
+    @Test fun markupIsTheReasonAndNotAnIncidentalOne() {
+        // Every string in rejectsMarkup also fails a later gate ("<start> brassy" is two words), so deleting
+        // the markup guard leaves them all rejected and the suite green - which would silently drop a reason
+        // category from the wording_rejected/wording_total count Task 11 publishes. These two lines pass
+        // every other rule, so only the guard can reject them.
+        assertEquals(Verdict.Reject("markup"), Verifier.check("brassy light holding (low)", "brassy"))
+        assertEquals(Verdict.Reject("markup"), Verifier.check("brassy light holding #low", "brassy"))
+    }
+
     @Test fun rejectsMoreThanOneLine() {
         assertTrue(Verifier.check("brassy light\nand then", "brassy") is Verdict.Reject)
     }
@@ -49,6 +58,13 @@ class VerifierTest {
         // contract rather than reporting a parsing artifact of ours.
         assertEquals(Verdict.Accept, Verifier.check("brassy, light holding low", "brassy"))
         assertEquals(Verdict.Reject("name absent"), Verifier.check("brassiness holds the low sky", "brassy"))
+    }
+
+    @Test fun anEmbeddedStemIsNotTheName() {
+        // "brassiness" proves the suffix side. This proves the prefix side, and is the only test that dies if
+        // the token match is traded for line.contains(name) - a refactor that would accept "unbrassy" as
+        // carrying the word brassy.
+        assertEquals(Verdict.Reject("name absent"), Verifier.check("unbrassy holds the low sky", "brassy"))
     }
 
     @Test fun rejectsBlankOutput() {
