@@ -31,9 +31,15 @@ class Store(val root: File) {
     /**
      * The attempt is part of the name because the shutter name is only precise to the minute: two shots inside one
      * minute would otherwise write the same file and lose the first evening's only evidence of what was measured.
+     *
+     * The name lives here rather than at the call site because the stack's `raw photo` action has to find the same
+     * file the shutter wrote: two copies of the convention, one in the writer and one in a screen, is how an action
+     * ends up looking for a file that was never named that.
      */
+    fun rawFile(shutter: String, attempt: Int): File = File(raw, "$shutter-attempt-$attempt.jpg")
+
     fun writeRaw(jpeg: ByteArray, shutter: String, attempt: Int): File =
-        File(raw, "$shutter-attempt-$attempt.jpg").apply { writeBytes(jpeg) }
+        rawFile(shutter, attempt).apply { writeBytes(jpeg) }
 
     fun recordFile(date: String, attempt: Int): File =
         if (attempt <= 1) File(records, "$date.json") else File(records, "$date-attempt-$attempt.json")

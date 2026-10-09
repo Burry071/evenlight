@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Rooted at files/ rather than at the two subdirectories, because Store keeps its root one level up
+    (`File(root, "evenlight")`) and a `<files-path>` of "." therefore covers evenlight/cards and evenlight/raw with
+    one entry. Naming the two directories instead would silently refuse a share the day a third folder appears.
+    cache/ is not exposed: the shot FrameSource decodes lives there, and nothing on any screen opens it.
+-->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <files-path name="evenlight" path="." />
+</paths>

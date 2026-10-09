@@ -20,5 +20,20 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!--
+            `raw photo` and `share` both leave the app's own directory, and a file:// URI in an intent extra throws
+            FileUriExposedException from API 24 up, so both go through this provider: exported="false", grant
+            read-only and per-URI, and paths rooted at files/ so evenlight/cards and evenlight/raw are covered.
+            Adding it adds no permission - the runtime set stays exactly {CAMERA}.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 </manifest>

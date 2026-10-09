@@ -1,83 +1,177 @@
 package com.burry071.evenlight
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
-import android.widget.Button
-import android.widget.LinearLayout
-import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
 import com.burry071.evenlight.capture.FrameSource
+import com.burry071.evenlight.core.EveningRecord
+import com.burry071.evenlight.data.Settings
 import com.burry071.evenlight.data.Store
+import com.burry071.evenlight.ui.Nav
+import com.burry071.evenlight.ui.EvenlightContent
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Task 8's stopgap: the nightly path (capture -> sample -> match -> render -> files) has to be tappable tonight so
- * Step 7's device pass can exercise it at all. Deliberately ugly - setContentView twice, no state, no theme. Task 9
- * replaces this whole file with the Compose screens; nothing here is a contract except
- * [EvenlightController.forDevice].
+ * The shell for the four screens, and the only place that knows what an `Activity` is.
+ *
+ * Two things Task 8 built survive into here, deliberately:
+ *  - the camera binding. `PreviewView` is created inside `ShootScreen`'s `AndroidView`, and the provider it binds to
+ *    is awaited on `Dispatchers.IO` before the bind is handed back to the main thread, because camera-lifecycle
+ *    1.3.4 has no `ProcessCameraProvider.awaitInstance` (that lands in 1.4.0) and no dependency may be fetched.
+ *  - `ContextCompat.getMainExecutor` rather than `Context.getMainExecutor`, which is API 28 and this module's minSdk
+ *    is 27.
+ *  - the `RequestPermission` contract for `CAMERA`, the app's only runtime permission.
+ *
+ * File and record reads go to `Dispatchers.IO` because `readRecords()` walks the filesystem on the same thread that
+ * would otherwise be drawing the first frame.
  */
 class MainActivity : ComponentActivity() {
+
+    private lateinit var store: Store
     private lateinit var frame: FrameSource
-    private lateinit var controller: EvenlightController
-    private lateinit var preview: PreviewView
+    private var provider: ProcessCameraProvider? = null
+    private var preview: PreviewView? = null
+
+    private var settings by mutableStateOf(Settings.UNSET)
+    private var records by mutableStateOf<List<EveningRecord>>(emptyList())
+    private var held by mutableStateOf<Set<String>>(emptySet())
+    private var controller by mutableStateOf<EvenlightController?>(null)
+    private var hasCamera by mutableStateOf(false)
 
     private val requestCamera = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        hasCamera = granted
         if (granted) bindCamera()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val store = Store(filesDir)
-        // Task 9's Setup screen owns this. Until then a device can be pointed at the sky by writing
-        // files/evenlight/settings.json through adb, and a phone with no coordinates simply refuses to shoot.
-        val settings = store.loadSettings()
-        // ContextCompat rather than Context.getMainExecutor(), which is API 28 and this module's minSdk is 27.
+        store = Store(filesDir)
+        settings = store.loadSettings()
         frame = FrameSource(this, ContextCompat.getMainExecutor(this))
         controller = EvenlightController.forDevice(this, store, settings, frame)
-        preview = PreviewView(this)
-        val shoot = Button(this).apply { text = "Shoot" }
-        setContentView(LinearLayout(this).apply {
-            // VERTICAL is load-bearing, not cosmetic: a LinearLayout defaults to HORIZONTAL, where the preview's
-            // (0, 0, weight 1) means "zero width, zero height, take the leftover WIDTH" - a collapsed view that
-            // never shows a frame to aim by. CameraX still captures, which is why Step 7 passed without noticing.
-            orientation = LinearLayout.VERTICAL
-            addView(preview, LinearLayout.LayoutParams(0, 0, 1f))
-            addView(shoot, LinearLayout.LayoutParams(-1, -2))
-        })
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-            bindCamera()
-        } else {
-            requestCamera.launch(Manifest.permission.CAMERA)
+        hasCamera = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) ==
+            PackageManager.PERMISSION_GRANTED
+
+        setContent {
+            val nav = Nav.rememberNav()
+            EvenlightContent(
+                nav = nav,
+                store = store,
+                settings = settings,
+                records = records,
+                held = held,
+                controller = controller ?: return@setContent,
+                hasCamera = hasCamera,
+                onEnsureCamera = { ensureCamera() },
+                onPreviewReady = { view -> preview = view; bindCamera() },
+                onOpenRaw = { record -> openRaw(record) },
+                onShareCard = { date -> shareCard(date) },
+                onSettingsSaved = { s ->
+                    settings = s
+                    controller = EvenlightController.forDevice(this, store, s, frame)
+                    reload()
+                },
+                reduceMotion = reduceMotion()
+            )
         }
-        shoot.setOnClickListener {
-            lifecycleScope.launch {
-                controller.shoot().fold(
-                    onSuccess = { setContentView(TextView(this@MainActivity).apply { text = "${it.name} / ${it.bandsHex}" }) },
-                    onFailure = { setContentView(TextView(this@MainActivity).apply { text = "failed: ${it.message}" }) }
-                )
+        reload()
+    }
+
+    /** Every read this screen does, in one place, so a shot that files a card cannot leave the stack on old data. */
+    private fun reload() {
+        lifecycleScope.launch {
+            val loaded = withContext(Dispatchers.IO) { store.readRecords() to store.eveningsWithCards() }
+            records = loaded.first
+            held = loaded.second
+        }
+    }
+
+    private fun ensureCamera() {
+        if (hasCamera) bindCamera() else requestCamera.launch(Manifest.permission.CAMERA)
+    }
+
+    /**
+     * Idempotent, and called from both sides of the race that matters: the preview arriving, and the permission (or
+     * the provider) arriving. `FrameSource.start` unbinds before binding, so a second call after a rotation is a
+     * re-bind and not a leak.
+     */
+    private fun bindCamera() {
+        val view = preview ?: return
+        val bound = provider
+        if (bound != null) {
+            frame.start(bound, view, this)
+            return
+        }
+        lifecycleScope.launch {
+            val got = withContext(Dispatchers.IO) {
+                try {
+                    ProcessCameraProvider.getInstance(this@MainActivity).get()
+                } catch (t: Throwable) {
+                    null
+                }
+            }
+            if (got != null) {
+                provider = got
+                if (preview === view) frame.start(got, view, this@MainActivity)
             }
         }
     }
 
     /**
-     * camera-lifecycle 1.3.4 has no `ProcessCameraProvider.awaitInstance` (it lands in 1.4.0) and no new
-     * dependency may be fetched, so the ListenableFuture is awaited off the main thread and the use-case bind
-     * happens back on it - the fallback the plan names: `getInstance(this).get()`.
+     * `raw photo` and `share` both hand a file to another app, and a `file://` extra throws
+     * `FileUriExposedException` from API 24 up, so both go through the `androidx.core.content.FileProvider`
+     * declared in the manifest with authority `${applicationId}.fileprovider`. The grant is per-URI and read-only:
+     * the runtime permission set stays exactly `{CAMERA}`.
      */
-    private fun bindCamera() {
-        lifecycleScope.launch {
-            val provider = withContext(Dispatchers.IO) {
-                try { ProcessCameraProvider.getInstance(this@MainActivity).get() } catch (t: Throwable) { null }
+    private fun openRaw(record: EveningRecord) {
+        val file = store.rawFile(record.shutter, record.attempt)
+        if (!file.canRead()) return
+        startActivity(
+            Intent(Intent.ACTION_VIEW).apply {
+                type = "image/jpeg"
+                data = uriFor(file)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            if (provider != null) frame.start(provider, preview, this@MainActivity)
-        }
+        )
     }
+
+    private fun shareCard(date: String) {
+        val file = store.cardFile(date)
+        if (!file.canRead()) return
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "image/png"
+            putExtra(Intent.EXTRA_STREAM, uriFor(file))
+            putExtra(Intent.EXTRA_SUBJECT, "Evenlight $date")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        startActivity(Intent.createChooser(send, null))
+    }
+
+    private fun uriFor(file: File) =
+        FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+
+    /**
+     * Reduce Motion, read the way Android actually exposes it: the animator duration scale is the developer-option
+     * switch and the one the system honours, and at 0 no animation of any length runs. The brief's "or reduce-motion
+     * is on" resolves to this same flag on every device this app can install on.
+     */
+    private fun reduceMotion(): Boolean =
+        android.provider.Settings.Global.getFloat(
+            contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f
+        ) == 0f
 }

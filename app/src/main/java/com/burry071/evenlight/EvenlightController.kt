@@ -123,14 +123,22 @@ class EvenlightController(
 
     companion object {
         /**
-         * The device-shaped controller. The typefaces are the platform defaults because Fraunces and Instrument
-         * Sans only land in Task 9; the strip name is laid out for Fraunces at 116f, so with DEFAULT it may crowd
-         * the strip. That is the known cost of landing the nightly path tonight, and Task 9's fonts retire it.
+         * The device-shaped controller. The typefaces are the two bundled variable TTFs from Task 9 Step 1: the
+         * strip name is laid out for Fraunces at 116f, and with `Typeface.DEFAULT` it crowded the strip - which was
+         * the known cost of landing the nightly path one night, and is retired here.
+         *
+         * `Resources.getFont` is API 26 and this module's minSdk is 27, so no compatibility branch is needed. The
+         * faces are read from the resource table rather than from `androidx.compose.ui.text.font.Font`, because the
+         * card is drawn with a `Canvas` and a `Paint`, not with Compose: the two halves of the app share the file,
+         * not the type.
          */
         fun forDevice(activity: Context, store: Store, settings: Settings, frame: FrameSource): EvenlightController =
             EvenlightController(
                 store = store, settings = settings, frame = frame,
-                renderer = CardRenderer(Typeface.DEFAULT, Typeface.SANS_SERIF),
+                renderer = CardRenderer(
+                    activity.resources.getFont(R.font.fraunces_variable),
+                    activity.resources.getFont(R.font.instrument_sans_variable)
+                ),
                 time = Timebase.SYSTEM,
                 displayRotation = {
                     @Suppress("DEPRECATION")
