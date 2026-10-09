@@ -74,4 +74,32 @@ class VerifierTest {
     @Test fun rejectsUpperCaseBecauseTheHouseStyleIsLowercase() {
         assertEquals(Verdict.Reject("not-lowercase"), Verifier.check("Brassy Light Holding Low", "brassy"))
     }
+
+    @Test fun rejectsAsterisksBecauseTheGateIsAnAllowlistNotADenylist() {
+        // Measured, not hypothetical: the device answered `the **ash** sky glowed softly as dusk fell.`,
+        // the old denylist of `# < { (` had no rule for `*`, and the card printed the literal asterisks.
+        // This line passes every other rule - eight words, lowercase, no digits, "ash" is a whole token -
+        // so only the character set can stop it.
+        assertEquals(Verdict.Reject("markup"), Verifier.check("the **ash** sky glowed softly as dusk fell.", "ash"))
+    }
+
+    @Test fun rejectsUnderscoreAndBacktick() {
+        // Markdown emphasis and code spans are the two other shapes a chat-trained model reaches for.
+        // Both lines here otherwise pass every other rule, so `markup` is the only possible reason.
+        assertEquals(Verdict.Reject("markup"), Verifier.check("brassy_light holds the low sky", "brassy"))
+        assertEquals(Verdict.Reject("markup"), Verifier.check("brassy `light` holds low", "brassy"))
+    }
+
+    @Test fun rejectsTheCurlyApostropheEvenThoughItLooksLikeOneWeAllow() {
+        // The cost of the allowlist, accepted up front: U+2019 is non-ASCII, so it counts as markup and the
+        // rejection rate takes the hit. The token split would have found "brassy" inside "brassy’s" anyway -
+        // only the character set can be rejecting this line.
+        assertEquals(Verdict.Reject("markup"), Verifier.check("brassy\u2019s light holds low", "brassy"))
+    }
+
+    @Test fun acceptsTheFourMarksTheAllowlistNames() {
+        // Every allowed mark in one line: period, comma, hyphen, straight apostrophe, over pure a-z and spaces.
+        // If this ever rejects, the gate is rejecting lines its own allowlist admits.
+        assertEquals(Verdict.Accept, Verifier.check("brassy, the low-lit sky's fading.", "brassy"))
+    }
 }
