@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import skycard
 
 FIX = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "fixtures")
+REC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "docs", "data", "wording-sample")
 
 def pixels_of(name):
     return skycard.to_pixels(Image.open(os.path.join(FIX, name + ".png")))
@@ -105,6 +106,30 @@ class Equivalence(unittest.TestCase):
         self.assertEqual(skycard.Palette.PAPER, g.ink_on((0xC2, 0x85, 0x4A)))
         self.assertEqual(skycard.Palette.INK, g.ink_on((0xE3, 0xDE, 0xD4)))
 
+    def test_every_field_row_is_the_measured_blend_and_the_strip_is_the_winner(self):
+        # The card's load-bearing claim is that the colour on the card IS the colour that was measured, and
+        # until now nothing pinned the reference renderer's pixels outside a handful of hand-picked rows. The
+        # shipped Android renderer drew its 893 field rows as anti-aliased hairlines, which spread coverage
+        # instead of painting the row: 797 of 893 rows came out as a 25 % wash toward the card surface rather
+        # than the blend (final-review finding 1.1, reproduced against docs/images/). This walks every drawn
+        # field row and every strip row of a fresh render at the frame's centre column and demands the exact
+        # blend_of value - the check that would have caught 1.1 on the Python side. strip_top is the
+        # boundary because the strip deliberately paints over the last 96 field rows with the winner band,
+        # exactly as CardRenderer does, and the guard below pins that the two are different colours, so the
+        # strip assertions cannot pass by the blend happening to equal them.
+        bands, _ = skycard.sample(*pixels_of("sky_blocks"))
+        index = skycard.winner(bands)
+        out = os.path.join(tempfile.mkdtemp(), "field.png")
+        skycard.render_card(bands, out, winner_index=index)
+        rgb = Image.open(out).convert("RGB")
+        g = skycard.CardGeometry()
+        self.assertNotEqual(bands[index], g.blend_of(bands, g.field_blend(g.strip_top)))
+        for y in range(g.strip_top):
+            self.assertEqual((y, g.blend_of(bands, g.field_blend(y))), (y, rgb.getpixel((540, y))))
+        for y in range(g.strip_top, g.field_height):
+            self.assertEqual((y, bands[index]), (y, rgb.getpixel((540, y))))
+        self.assertEqual(skycard.Palette.CARD, rgb.getpixel((540, g.paper_top)))
+
     def test_a_rendered_card_is_the_artefact_size_and_carries_the_measured_colours(self):
         # The card is the demo's artefact, so its pixels are checked rather than its drawing calls: an
         # alpha channel reaching the canvas, or a band being mixed where it should be shown untouched,
@@ -158,6 +183,77 @@ class Equivalence(unittest.TestCase):
         self.assertEqual("brassy", printed["name"])
         self.assertEqual({"bands", "winner", "name"}, set(printed))
         self.assertTrue(os.path.exists(out))
+
+    def test_from_record_redraws_the_card_from_the_stored_fields(self):
+        # Task 10's reproducibility promise, which until --from-record existed was only a docstring claim:
+        # a stranger with this repository and a published record can re-derive that evening's card without
+        # the photo. Every header part comes from the record's own fields; stdout prints what was read from
+        # the file, not what this run would have decided; the date is the record's, never EXIF or mtime.
+        src = os.path.join(REC, "2026-10-10.json")
+        with io.open(src, encoding="utf-8") as f:
+            rec = json.load(f)
+        out = os.path.join(tempfile.mkdtemp(), "card.png")
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            self.assertEqual(0, skycard.main(["--from-record", src, "-o", out, "--print-json"]))
+        printed = json.loads(buf.getvalue())
+        self.assertEqual({"bands", "winner", "name"}, set(printed))
+        self.assertEqual(rec["bands"], printed["bands"])                   # the record's stored strings
+        self.assertEqual(rec["winner"], printed["winner"])
+        self.assertEqual(rec["name"], printed["name"])
+        drawn = Image.open(out)
+        self.assertEqual((1080, 1440), drawn.size)
+        bands = [skycard._parse_hex(s) for s in rec["bands"]]
+        g = skycard.CardGeometry()
+        rgb = drawn.convert("RGB")
+        # x = 1040 on the strip: the name glyph starts at the margin and must not be what is being sampled.
+        for y in range(g.strip_top, g.field_height):
+            self.assertEqual((y, bands[rec["winner"]]), (y, rgb.getpixel((1040, y))))
+        self.assertEqual("10 October", skycard.card_from_record(src, os.path.join(tempfile.mkdtemp(), "c.png"))[2])
+
+    def test_from_record_never_recomputes_the_winner(self):
+        # The drift CardRenderer.kt's and CardHeader.kt's docstrings forbid: a record whose stored `winner`
+        # is not winner(bands) must still draw the RECORD's strip, because the strip is a fact about that
+        # evening. If --from-record decided for itself, this is the test that dies.
+        with io.open(os.path.join(REC, "2026-10-10.json"), encoding="utf-8") as f:
+            rec = json.load(f)
+        bands = [skycard._parse_hex(s) for s in rec["bands"]]
+        drifted = (rec["winner"] + 2) % skycard.BAND_COUNT
+        self.assertNotEqual(drifted, skycard.winner(bands))                # teeth: the drift is real
+        rec["winner"] = drifted
+        path = os.path.join(tempfile.mkdtemp(), "drifted.json")
+        with io.open(path, "w", encoding="utf-8") as f:
+            json.dump(rec, f)
+        out = os.path.join(tempfile.mkdtemp(), "card.png")
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            skycard.main(["--from-record", path, "-o", out, "--print-json"])
+        self.assertEqual(drifted, json.loads(buf.getvalue())["winner"])
+        g = skycard.CardGeometry()
+        rgb = Image.open(out).convert("RGB")
+        for y in range(g.strip_top, g.field_height):
+            self.assertEqual((y, bands[drifted]), (y, rgb.getpixel((1040, y))))
+        # The chips follow the stored winner too: index 7 has only a lower neighbour, bands[6], drawn at
+        # CardRenderer's single-chip position.
+        self.assertEqual(bands[6], rgb.getpixel((985, g.paper_top + 173)))
+
+    def test_the_pinned_record_bytes_load_the_way_python_needs_them(self):
+        # EveningRecordTest.theWireFileIsExactlyWhatPythonReads pins these exact bytes from the Kotlin side
+        # and names the failure this closes: the comment there says "winner":6.0 would load fine and then
+        # make bands[record["winner"]] a TypeError. Until --from-record, nothing in Python parsed a record
+        # at all, so the contract was asserted on one side only. These are the same bytes, read the way
+        # --from-record reads them.
+        rec = json.loads("""{"date":"2026-10-08","shutter":"2026-10-08--1759","bands":["#1E2438","#2A3350","#3C4A67","#5C6B82","#8A8375","#B08A5E","#C2854A","#3A322A"],"winner":6,"name":"brassy","sun_altitude_deg":9,"mean_luminance":0.117,"wording":"brassy light holding at the edge of the wall","wording_source":"model","wording_rejected":false,"attempt":1,"clock_suspect":false}""")
+        self.assertIsInstance(rec["winner"], int)
+        self.assertNotIsInstance(rec["winner"], bool)                      # json never gives bool here, but `True` IS an int
+        self.assertEqual(8, len(rec["bands"]))
+        self.assertTrue(all(isinstance(s, str) and s.startswith("#") for s in rec["bands"]))
+        path = os.path.join(tempfile.mkdtemp(), "pinned.json")
+        with io.open(path, "w", encoding="utf-8") as f:
+            json.dump(rec, f)
+        out = os.path.join(tempfile.mkdtemp(), "card.png")
+        skycard.card_from_record(path, out)                                # parses, renders, writes - no float, no TypeError
+        self.assertEqual((1080, 1440), Image.open(out).size)
 
 if __name__ == "__main__":
     unittest.main()

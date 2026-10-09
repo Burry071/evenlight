@@ -6,6 +6,7 @@ core/src/test/kotlin/.../FixtureEquivalenceTest.kt and both languages are tested
 agreement is transitive (tools/python/test_skycard.py).
 
 Usage: python skycard.py PHOTO [-o card.png] [--print-json]
+       python skycard.py --from-record RECORD.json [-o card.png] [--print-json]
 """
 import math
 import os
@@ -244,9 +245,9 @@ FONT_DIR = os.path.join(HERE, "..", "..", "app", "src", "main", "res", "font")
 DISPLAY_FONT = os.path.join(FONT_DIR, "fraunces_variable.ttf")
 TEXT_FONT = os.path.join(FONT_DIR, "instrument_sans_variable.ttf")
 
-# The card's typography sizes, as CardRenderer.kt sets them (116f on the strip, 62f on the date,
-# 44f on the wording, 32f on the footer), all measured from the top-left of a 1080-wide artefact.
-STRIP_SIZE, DATE_SIZE, WORDING_SIZE, FOOTER_SIZE = 116, 62, 44, 32
+# The card's typography sizes, as CardRenderer.kt sets them (116f on the strip, 62f on the date, 40f on the sun
+# line, 44f on the wording, 32f on the footer), all measured from the top-left of a 1080-wide artefact.
+STRIP_SIZE, DATE_SIZE, SUN_SIZE, WORDING_SIZE, FOOTER_SIZE = 116, 62, 40, 44, 32
 MARGIN, CHIP_W, CHIP_GAP, CHIP_R = 56, 46, 60, 8
 
 
@@ -271,7 +272,8 @@ def _wrapped(draw, text, font, max_width):
     return lines
 
 
-def render_card(bands, out_path, winner_index=None, name=None, date_label=None, wording=None):
+def render_card(bands, out_path, winner_index=None, name=None, date_label=None, wording=None,
+                neighbours=None, sun_altitude_deg=None):
     """Draw the 1080x1440 card for these eight measured bands and write it to out_path as a PNG.
 
     `winner_index` is the band the strip shows, and it is named the way `EveningRecord.winnerIndex` and
@@ -279,6 +281,11 @@ def render_card(bands, out_path, winner_index=None, name=None, date_label=None, 
     record's stored value came from - and a caller re-deriving a card from a record must pass that
     record's stored `winner` instead, because the strip is a fact about the record and recomputing it
     here could draw a card that disagrees with the file it was built from.
+
+    `neighbours` and `sun_altitude_deg` are the remaining parts of `CardRenderer.Header` a record-driven
+    caller supplies (headerFor takes the chips and the altitude from the record and its match, not from
+    anything recomputed here); left unset on the photo path the chips are the winner's stored neighbours
+    and the sun line stays off the card, as before.
     """
     from PIL import Image, ImageDraw
 
@@ -311,10 +318,16 @@ def render_card(bands, out_path, winner_index=None, name=None, date_label=None, 
         draw.text((MARGIN, geo.paper_top + 120), date_label,
                   font=_font(DISPLAY_FONT, DATE_SIZE), fill=Palette.INK, anchor="ls")
 
-    # No sun-altitude line: it needs a place and a time, and a photo alone carries neither. Printing one
-    # would put an unmeasured number on a card whose whole claim is that it has none.
+    # A photo carries neither a place nor a time, so the photo path passes no sun altitude and the line stays
+    # off the card - printing one would put an unmeasured number on a card whose whole claim is that it has
+    # none. A record carries the value the app measured at the shutter, and CardRenderer draws it, so
+    # --from-record supplies it and it lands at CardRenderer's position.
+    if sun_altitude_deg is not None:
+        draw.text((MARGIN, geo.paper_top + 186), "sun %d\u00B0" % sun_altitude_deg,
+                  font=_font(TEXT_FONT, SUN_SIZE), fill=Palette.MUTED, anchor="ls")
 
-    neighbours = [bands[i] for i in (index - 1, index + 1) if 0 <= i < len(bands)]
+    if neighbours is None:
+        neighbours = [bands[i] for i in (index - 1, index + 1) if 0 <= i < len(bands)]
     x = geo.width - MARGIN - CHIP_GAP * len(neighbours)
     for n in neighbours:
         draw.rounded_rectangle([x, geo.paper_top + 150, x + CHIP_W, geo.paper_top + 196],
@@ -335,6 +348,42 @@ def render_card(bands, out_path, winner_index=None, name=None, date_label=None, 
     return img
 
 
+def card_from_record(path, out_path):
+    """Re-derive the card a stored evening record describes, from the record's own fields.
+
+    This is the reproducibility path the docstrings in CardRenderer.kt and CardHeader.kt promise: a stranger
+    with this repository and the record's JSON can redraw the published card without the original photo. Every
+    header part comes from the record exactly as `headerFor` (CardHeader.kt:26-37) assembles it - name, wording,
+    date, sun altitude, the stored `winner`, and the chips at winner-1 and winner+1 - and `winner` is NEVER
+    recomputed from the bands here: a record whose stored winner differs from winner(bands) draws the record's
+    strip, because the strip is a fact about that evening, not an opinion about the hexes. The night flag is
+    false, matching CardHeader.kt:35; this tool only ever files day cards.
+
+    Returns (bands, winner_index, date_label, record) with the values read from the record, for honest stdout.
+    """
+    import json
+    with open(path, encoding="utf-8") as f:
+        rec = json.load(f)
+    for key in ("date", "bands", "winner", "name", "wording", "sun_altitude_deg"):
+        if key not in rec:
+            raise ValueError("record %s has no %r field" % (path, key))
+    if len(rec["bands"]) != BAND_COUNT:
+        raise ValueError("a record must carry %d bands, got %d" % (BAND_COUNT, len(rec["bands"])))
+    bands = [_parse_hex(s) for s in rec["bands"]]                 # stored order, unaltered
+    index = rec["winner"]
+    if isinstance(index, bool) or not isinstance(index, int) or not 0 <= index < BAND_COUNT:
+        raise ValueError("record winner is not a band index: %r" % (rec["winner"],))
+    date = rec["date"]
+    month, day = int(date[5:7]), int(date[8:10])
+    if not 1 <= month <= 12 or not 1 <= day <= 31:
+        raise ValueError("record date is not a calendar date: %s" % date)
+    date_label = "%d %s" % (day, MONTHS[month - 1])               # the record's date, never EXIF, never mtime
+    neighbours = [bands[i] for i in (index - 1, index + 1) if 0 <= i < len(bands)]
+    render_card(bands, out_path, winner_index=index, name=rec["name"], date_label=date_label,
+                wording=rec["wording"], neighbours=neighbours, sun_altitude_deg=rec["sun_altitude_deg"])
+    return bands, index, date_label, rec
+
+
 def _date_label_of(path):
     """The evening the card is dated from, and where that date came from - never a guessed one.
 
@@ -348,10 +397,15 @@ def _date_label_of(path):
         raw = exif.get(tag)
         if isinstance(raw, str) and len(raw) >= 10 and raw[4] == ":" and raw[7] == ":":
             day, month = int(raw[8:10]), int(raw[5:7])
-            return "%d %s" % (day, MONTHS[month - 1]), "EXIF %s" % ("DateTimeOriginal" if tag == 36867 else "DateTime")
+            # EXIF is external input: a malformed month would index MONTHS[-1] (month 00 printed "December")
+            # or raise IndexError (month 13), and a malformed day would print "0 March". Out of range, the
+            # loop moves on and the file-mtime fallback below takes over, with its provenance line saying so -
+            # the existing no-EXIF path, not a fabricated date.
+            if 1 <= month <= 12 and 1 <= day <= 31:
+                return "%d %s" % (day, MONTHS[month - 1]), "EXIF %s" % ("DateTimeOriginal" if tag == 36867 else "DateTime")
     import datetime
     local = datetime.datetime.fromtimestamp(os.path.getmtime(path))
-    return "%d %s" % (local.day, MONTHS[local.month - 1]), "file mtime (the photo carries no EXIF date)"
+    return "%d %s" % (local.day, MONTHS[local.month - 1]), "file mtime (the photo carries no usable EXIF date)"
 
 
 def main(argv=None):
@@ -359,11 +413,37 @@ def main(argv=None):
     from PIL import Image
     started = time.monotonic()
     ap = argparse.ArgumentParser(prog="skycard.py", description="Turn a sky photo into an Evenlight card.")
-    ap.add_argument("photo", help="the sky photograph to file as a card")
-    ap.add_argument("-o", "--out", help="card PNG to write (default: <photo>-card.png beside the photo)")
+    ap.add_argument("photo", nargs="?", help="the sky photograph to file as a card")
+    ap.add_argument("--from-record", metavar="RECORD.json", dest="from_record",
+                    help="re-derive the card a stored evening record describes, without the photo")
+    ap.add_argument("-o", "--out", help="card PNG to write (default: <input>-card.png beside the input)")
     ap.add_argument("--print-json", action="store_true", help="print bands, winner and name as JSON")
     args = ap.parse_args(argv)
 
+    if args.from_record:
+        # The record path reads every header part from the JSON - see card_from_record - so the strip follows
+        # the stored winner even when that disagrees with winner(bands), which is the drift the Kotlin
+        # docstrings forbid and the reason this mode exists at all.
+        if args.photo:
+            ap.error("--from-record replaces the photo input; give one or the other")
+        out = args.out or os.path.splitext(args.from_record)[0] + "-card.png"
+        bands, index, date_label, rec = card_from_record(args.from_record, out)
+        if args.print_json:
+            # The record's own stored values, not a recomputation: stdout says exactly what the card was drawn
+            # from, and --print-json stays pipeable because the provenance lines go to stderr.
+            print(json.dumps({"bands": rec["bands"], "winner": rec["winner"], "name": rec["name"]}))
+        else:
+            print("bands  " + " ".join(rec["bands"]))
+            print("winner %d" % rec["winner"])
+            print("name   %s" % rec["name"])
+        print("record %s" % args.from_record, file=sys.stderr)
+        print("date   %s - from the record's date field" % date_label, file=sys.stderr)
+        print("card   %s (%dx%d PNG)" % (out, CardGeometry().width, CardGeometry().height), file=sys.stderr)
+        print("elapsed %.1f s" % (time.monotonic() - started), file=sys.stderr)
+        return 0
+
+    if not args.photo:
+        ap.error("a photo is required unless --from-record is given")
     src, w, h = to_pixels(Image.open(args.photo))
     bands, _ = sample(src, w, h)
     index = winner(bands)
