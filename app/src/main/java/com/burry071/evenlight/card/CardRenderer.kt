@@ -25,15 +25,22 @@ class CardRenderer(private val displayFont: Typeface, private val textFont: Type
     fun render(bands: List<Int>, header: Header): Bitmap {
         val bmp = Bitmap.createBitmap(geo.width, geo.height, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
-        val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        // Two paints, split by what they draw. `fill` covers the field, the strip and the chips and carries no
+        // ANTI_ALIAS_FLAG on purpose: an anti-aliased hairline stroke spreads coverage across the rows either side
+        // of the line it names instead of painting that row, so the 893-row field would come out a blend of the
+        // blend rather than the blend itself - and this file's whole job is that it draws, it does not decide.
+        // The measured value leaves :core untouched; the primitive here must simply deliver it to the pixel.
+        // `text` keeps anti-aliasing: glyph edges are the one place smoothing is the correct drawing.
+        val fill = Paint()
+        val text = Paint(Paint.ANTI_ALIAS_FLAG)
         val paper = if (header.night) Palette.NIGHT_SURFACE else Palette.CARD
-        val text = if (header.night) Palette.NIGHT_TEXT else Palette.INK
+        val inked = if (header.night) Palette.NIGHT_TEXT else Palette.INK
         val quiet = if (header.night) Palette.NIGHT_HAIRLINE else Palette.MUTED
         c.drawColor(paper)
 
         for (y in 0 until geo.fieldHeight) {
-            p.color = geo.blendOf(bands, geo.fieldBlend(y))
-            c.drawLine(0f, y.toFloat(), geo.width.toFloat(), y.toFloat(), p)
+            fill.color = geo.blendOf(bands, geo.fieldBlend(y))
+            c.drawRect(0f, y.toFloat(), geo.width.toFloat(), (y + 1).toFloat(), fill)
         }
 
         // The winner comes in on the header rather than being recomputed here, because the record stores
@@ -41,33 +48,33 @@ class CardRenderer(private val displayFont: Typeface, private val textFont: Type
         // itself could draw a strip that disagrees with the record it was built from - which is the one drift
         // this file exists to prevent, and "it draws, it does not decide" means exactly this line.
         val winner = Palette.opaque(bands[header.winnerIndex])
-        p.color = winner
-        c.drawRect(0f, geo.stripTop.toFloat(), geo.width.toFloat(), geo.fieldHeight.toFloat(), p)
-        p.color = geo.inkOn(winner)
-        p.typeface = displayFont
-        p.textSize = 116f
-        c.drawText(header.name, 56f, geo.stripTop + geo.stripHeight * 0.72f, p)
+        fill.color = winner
+        c.drawRect(0f, geo.stripTop.toFloat(), geo.width.toFloat(), geo.fieldHeight.toFloat(), fill)
+        text.color = geo.inkOn(winner)
+        text.typeface = displayFont
+        text.textSize = 116f
+        c.drawText(header.name, 56f, geo.stripTop + geo.stripHeight * 0.72f, text)
 
-        p.color = text; p.typeface = displayFont; p.textSize = 62f
-        c.drawText(header.dateLabel, 56f, geo.paperTop + 120f, p)
-        p.color = quiet; p.typeface = textFont; p.textSize = 40f
-        c.drawText("sun ${header.sunAltitudeDeg}\u00B0", 56f, geo.paperTop + 186f, p)
+        text.color = inked; text.typeface = displayFont; text.textSize = 62f
+        c.drawText(header.dateLabel, 56f, geo.paperTop + 120f, text)
+        text.color = quiet; text.typeface = textFont; text.textSize = 40f
+        c.drawText("sun ${header.sunAltitudeDeg}\u00B0", 56f, geo.paperTop + 186f, text)
 
         var x = geo.width - 56f - 60f * header.neighbours.size
         for (n in header.neighbours) {
-            p.color = Palette.opaque(n)          // measured anchors arrive as 0x00RRGGBB (T3 packing)
-            c.drawRoundRect(x, geo.paperTop + 150f, x + 46f, geo.paperTop + 196f, 8f, 8f, p)
+            fill.color = Palette.opaque(n)          // measured anchors arrive as 0x00RRGGBB (T3 packing)
+            c.drawRoundRect(x, geo.paperTop + 150f, x + 46f, geo.paperTop + 196f, 8f, 8f, fill)
             x += 60f
         }
 
-        p.color = text; p.typeface = textFont; p.textSize = 44f
-        wrap(c, p, header.wording, 56f, geo.paperTop + 290f, geo.width - 112f, 60f)
+        text.color = inked; text.typeface = textFont; text.textSize = 44f
+        wrap(c, text, header.wording, 56f, geo.paperTop + 290f, geo.width - 112f, 60f)
 
-        p.color = quiet; p.textSize = 32f
+        text.color = quiet; text.textSize = 32f
         // "8 bands" is a fact about the sampler, so it is read from the sampler rather than typed into display
         // copy - a literal here would become an unmeasured number the moment BAND_COUNT moves, and the project's
         // rule is that no number appears on a card the app did not measure or compute.
-        c.drawText("measured, not adjusted \u00B7 ${BandSampler.BAND_COUNT} bands", 56f, geo.height - 56f, p)
+        c.drawText("measured, not adjusted \u00B7 ${BandSampler.BAND_COUNT} bands", 56f, geo.height - 56f, text)
         return bmp
     }
 

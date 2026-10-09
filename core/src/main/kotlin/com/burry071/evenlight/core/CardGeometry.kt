@@ -72,7 +72,7 @@ data class CardGeometry(val width: Int = 1080, val height: Int = 1440) {
         fun mix(shift: Int) = Pixels.roundHalfUp(
             (((a shr shift) and 0xFF) * (1 - t) + ((b shr shift) and 0xFF) * t)
         ).coerceIn(0, 255)
-        // Alpha is asserted here rather than left to the caller: the field is 893 drawn lines, and a blend that
+        // Alpha is asserted here rather than left to the caller: the field is 893 filled rows, and a blend that
         // returned 0x00RRGGBB would make the whole card invisible while every int comparison here still passed.
         return Palette.opaque(Pixels.rgb(mix(16), mix(8), mix(0)))
     }
