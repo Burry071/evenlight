@@ -87,7 +87,10 @@ fun StackScreen(
                     Modifier.weight(62f).fillMaxSize().padding(end = 20.dp, top = 14.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Box(Modifier.widthIn(max = 420.dp).fillMaxWidth()) { detail() }
+                    // No cap here: `CardScreen` caps its own card, and a second `widthIn` on the way in composes
+                    // against it and wins, so the pane's card would render at 380 dp while the design system's
+                    // number said 420. One mechanism, one number.
+                    detail()
                 }
             }
         } else {

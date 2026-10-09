@@ -249,7 +249,8 @@ private fun CardPane(
         hasRawPhoto = record?.let(canReadRaw) ?: false,
         onRawPhoto = { record?.let(onOpenRaw) },
         onShare = { onShareCard(date) },
-        // The pane's box already caps at 420 dp; saying it here too keeps one number rather than two mechanisms.
+        // The expanded pane's card is the design system's 420 dp; below that threshold a card is full-bleed at the
+        // same screen's 340 dp cap, so the two numbers are the two boxes the mockup drew rather than two rules.
         cardMaxWidth = 420.dp
     )
 }

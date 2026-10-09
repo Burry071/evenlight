@@ -242,16 +242,21 @@ fun CardDetail(
                 .height(240.dp)
                 .background(EvenlightColors.NightHairline)
         )
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 4.dp)
-                .padding(top = 18.dp),
-            horizontalArrangement = Arrangement.spacedBy(22.dp)
-        ) {
-            // The 48 dp target is invisible padding, not a bigger label.
-            if (hasRawPhoto) CardAction("raw photo", onClick = onRawPhoto)
-            CardAction("share", onClick = onShare)
+        // The actions belong to a card that exists. On a hole, or while a card PNG cannot be read, this screen has a
+        // placeholder and a caption and nothing to press - which is what the caption promises, and why an
+        // unpressable `share` must not be drawn.
+        if (bitmap != null) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp)
+                    .padding(top = 18.dp),
+                horizontalArrangement = Arrangement.spacedBy(22.dp)
+            ) {
+                // The 48 dp target is invisible padding, not a bigger label.
+                if (hasRawPhoto) CardAction("raw photo", onClick = onRawPhoto)
+                CardAction("share", onClick = onShare)
+            }
         }
         Spacer(Modifier.weight(1f))
         Text(

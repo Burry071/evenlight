@@ -93,7 +93,8 @@ class MainActivity : ComponentActivity() {
                 reduceMotion = reduceMotion()
             )
         }
-        reload()
+        // No reload here: a visible activity always reaches `onResume`, which reloads, and calling both walks the
+        // record and card directories twice concurrently on a cold start for the same answer.
     }
 
     /**
