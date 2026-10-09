@@ -13,7 +13,7 @@ data class EveningRecord(
     val sunAltitudeDeg: Int,
     val meanLuminance: Double,
     val wording: String,
-    val wordingSource: String,      // "model" | "template" | "none"
+    val wordingSource: String,      // "model" | "template" | "no-answer" | "none"
     val wordingRejected: Boolean,
     val attempt: Int,
     val clockSuspect: Boolean

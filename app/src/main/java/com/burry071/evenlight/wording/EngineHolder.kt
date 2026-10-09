@@ -101,27 +101,36 @@ class EngineHolder(private val context: Context) {
         return try {
             withContext(Dispatchers.Default) {
                 withTimeoutOrNull(10_000) {
-                    val cfg = ConversationConfig(
-                        systemInstruction = Contents.of(Wording.SYSTEM),
-                        samplerConfig = SamplerConfig(topK = 20, topP = 0.9, temperature = 0.7)
-                    )
-                    // Conversation is AutoCloseable, not Closeable, so stdlib's `use` is not available without a
-                    // kotlin.jdk7 import; try/finally is the same guarantee with no import fight.
-                    val conv = e.createConversation(cfg)
+                    // The guard is released inside the block that runs the native call, not in this function's
+                    // `finally`: a give-up here cannot prove `sendMessage` has unwound, because it is blocking
+                    // native code no cancellation interrupts - measured on an x86_64 AVD, a 10.5 s call still
+                    // delivered its line past the 10 s marker, so the marker bounds nothing. Releasing from the
+                    // caller would let close() free the engine under a call still running, which is the
+                    // use-after-free the guard exists for. If the block is cancelled before it starts, the flag
+                    // stays set and close() is skipped for the holder's life: a leak, which is the safe side.
                     try {
-                        conv.sendMessage(Wording.prompt(name, bands, altitudeDeg))
-                            .contents.contents.filterIsInstance<Content.Text>()
-                            .joinToString(" ") { it.text }.trim().lowercase()
+                        val cfg = ConversationConfig(
+                            systemInstruction = Contents.of(Wording.SYSTEM),
+                            samplerConfig = SamplerConfig(topK = 20, topP = 0.9, temperature = 0.7)
+                        )
+                        // Conversation is AutoCloseable, not Closeable, so stdlib's `use` is not available without a
+                        // kotlin.jdk7 import; try/finally is the same guarantee with no import fight.
+                        val conv = e.createConversation(cfg)
+                        try {
+                            conv.sendMessage(Wording.prompt(name, bands, altitudeDeg))
+                                .contents.contents.filterIsInstance<Content.Text>()
+                                .joinToString(" ") { it.text }.trim().lowercase()
+                        } finally {
+                            runCatching { conv.close() }
+                        }
                     } finally {
-                        runCatching { conv.close() }
+                        inFlight = false
                     }
                 }
             }
         } catch (t: Throwable) {
             if (t is CancellationException) throw t
             null
-        } finally {
-            inFlight = false
         }
     }
 

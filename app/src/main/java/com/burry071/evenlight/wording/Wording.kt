@@ -38,13 +38,14 @@ object Wording {
  * The controller calls it after the card is filed; whatever it returns is what the rewritten record must say.
  *
  * A rejected answer is still an answer: it lands on the template line but with `wording_source: "template"` and
- * `wording_rejected: true`, so the rejection counts in `Store.wordingRejected() / wordingTotal()`, the ratio the
- * README reports. A null candidate is not one answer but two, and conflating them is a measured bug: the device
- * filed seven evenings as `"none"` while the weights were present and the engine was warm, because a 10 s silent
- * timeout looked exactly like "no model installed" - which made the failure-rate denominator uncomputable.
- * `consulted` is the controller's `engine.ensure()` result and separates them: `"no-answer"` means asked and
- * silent (the verifier never saw a line, so `wordingRejected` stays false), `"none"` means never asked at all.
- * Task 12 must compute the consulted total as model + template(rejected) + no-answer, not `records.size`.
+ * `wording_rejected: true`, so the gate's rate is `wordingRejected()` over the evenings the model was actually
+ * asked, not over every evening filed - `Store.wordingTotal()` is the count of all records and is the wrong
+ * denominator here. A null candidate is not one answer but two, and conflating them is a measured bug: the device
+ * filed seven evenings as `"none"` while the weights were present and the engine was warm, because a call that
+ * produced nothing inside the budget looked exactly like "no model installed" - which made the failure-rate
+ * denominator uncomputable. `consulted` is the controller's `engine.ensure()` result and separates them:
+ * `"no-answer"` means asked and nothing came back, `"none"` means never asked at all.
+ * Task 12 reports two rates and does not merge them: answered/consulted, and rejected/answered.
  */
 fun applyWording(record: EveningRecord, candidate: String?, name: String, consulted: Boolean): EveningRecord {
     val verdict = candidate?.let { Verifier.check(it, name) }
