@@ -15,7 +15,9 @@ import com.burry071.evenlight.core.Pixels
 import com.burry071.evenlight.core.SunWindow
 import com.burry071.evenlight.data.Settings
 import com.burry071.evenlight.data.Store
+import com.burry071.evenlight.wording.EngineHolder
 import com.burry071.evenlight.wording.Wording
+import com.burry071.evenlight.wording.applyWording
 import kotlinx.coroutines.CancellationException
 import java.io.ByteArrayOutputStream
 import java.time.Duration
@@ -42,7 +44,8 @@ class EvenlightController(
     private val frame: FrameSource,
     private val renderer: CardRenderer,
     private val time: Timebase,
-    private val displayRotation: () -> Int
+    private val displayRotation: () -> Int,
+    private val engine: EngineHolder
 ) {
 
     /**
@@ -96,7 +99,7 @@ class EvenlightController(
                 sunAltitudeDeg = altitude,
                 meanLuminance = bands.meanLuminance,
                 wording = Wording.template(match.name),
-                wordingSource = "none",     // the engine arrives in T11; "none" means it was never consulted
+                wordingSource = "none",     // written unconsulted; the upgrade below rewrites it if the model answers
                 wordingRejected = false,
                 attempt = attempt,
                 clockSuspect = suspect
@@ -104,7 +107,29 @@ class EvenlightController(
             store.writeRecord(record, attempt)          // the record leads: it is the datum, and no later failure may lose it
             store.writeRaw(still.jpeg, record.shutter, attempt)
             store.writeCard(date, pngBytes(renderer.render(bands.ordered, headerFor(record, match))))
-            record
+
+            // The optional wording upgrade runs AFTER the filing above, never before it (R16). The measured engine
+            // cost - 4,566 ms init, 1,269 MB peak RSS, a 30 s give-up marker - means a model call ahead of the write
+            // could lose the evening entirely to an LMK kill; behind it, the worst case is that tonight keeps the
+            // template line the card was already filed with. Every throw in this block lands back on that record:
+            // the rewrite is best-effort, and a failed best-effort is not a failed shot.
+            val upgraded = runCatching {
+                val candidate = if (engine.ensure()) engine.line(match.name, record.bandsHex, altitude) else null
+                val finalRecord = applyWording(record, candidate, match.name)
+                if (finalRecord != record) {
+                    // The model answered at all - accepted or rejected, both are counted; a rejection that never
+                    // reached the JSON is a rejection the README's ratio cannot see. Same (date, attempt) path, so
+                    // this overwrites the file the record write above created and attemptsFor never sees two.
+                    store.writeRecord(finalRecord, attempt)
+                    if (finalRecord.wording != record.wording) {
+                        // headerFor prints record.wording onto the card image, so a card and a record that
+                        // disagree about the line is a visible bug: re-render, but only when the text changed.
+                        store.writeCard(date, pngBytes(renderer.render(bands.ordered, headerFor(finalRecord, match))))
+                    }
+                }
+                finalRecord
+            }.getOrElse { if (it is CancellationException) throw it else record }
+            upgraded
         }
         // runCatching catches Throwable, which is what a shutter crash needs - but that includes the coroutine's own
         // cancellation, which would otherwise become a failed Result a destroyed window is then asked to draw into.
@@ -151,7 +176,12 @@ class EvenlightController(
                 displayRotation = {
                     @Suppress("DEPRECATION")
                     (activity as? android.app.Activity)?.windowManager?.defaultDisplay?.rotation ?: 0
-                }
+                },
+                // Built here, not in MainActivity: the controller owns when the engine is consulted (after filing)
+                // and that policy lives with the call. An uninitialised holder is one object plus a path check; the
+                // 1.2 GB stays on disk until a shot finds weights present. A settings save rebuilds the controller
+                // and with it the holder - accepted cost of that rare path is one fresh lazy holder, not a reload.
+                engine = EngineHolder(activity)
             )
     }
 }
