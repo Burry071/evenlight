@@ -37,6 +37,17 @@ private val Body = FontFamily(Font(R.font.instrument_sans_variable))
 private val BodyStrong = FontFamily(Font(R.font.instrument_sans_medium))
 
 /**
+ * The design's `font-variant-numeric: tabular-nums` on every numeric sans line (mockups:61, :79, :93, :114, :126,
+ * :134, :137). Unlike `wght`/`opsz`, `tnum` is a real OpenType feature tag, so `fontFeatureSettings` is the correct
+ * and only mechanism for it — and the one the variable axes can never use.
+ *
+ * `GSUB` in `instrument_sans_variable.ttf` lists `tnum`, so this does something. `fraunces_variable.ttf` does not
+ * (no `tnum`, no `lnum`), which is why the serif `hero` and `strip` set nothing: their digits are proportional by
+ * design, and a feature string the font lacks is a silent no-op rather than an error.
+ */
+private const val TNUM = "tnum"
+
+/**
  * Every `Text` in every screen carries an explicit `style` from this object - that is the load-bearing half of the
  * rule. `MaterialTheme.typography` is Roboto, so one `Text("…")` without a style renders in the wrong family at
  * the wrong size and nothing fails.
@@ -78,20 +89,30 @@ object EvenlightType {
         .merge(SpanStyle(fontFamily = BodyStrong, fontWeight = FontWeight.Medium, fontSize = 15.sp))
         .merge(ParagraphStyle(lineHeight = 22.sp))
 
-    /** `.eyebrow` (mockups:55): the uppercase label above a heading. Callers uppercase the text themselves. */
+    /**
+     * `.eyebrow` (mockups:55): the uppercase label above a heading. Callers uppercase the text themselves. No
+     * tabular figures because `.eyebrow` never carries a number.
+     */
     val eyebrow = TextStyle.Default
         .merge(SpanStyle(fontFamily = Body, fontWeight = FontWeight.Normal, fontSize = 11.sp, letterSpacing = 0.11.em))
 
-    /** `.sub` (mockups:61): the line under a heading, tabular so a time does not jitter. */
+    /** `.sub` (mockups:61): the line under a heading. `tabular-nums` in the design, which is what `sub` sets below. */
     val sub = TextStyle.Default
-        .merge(SpanStyle(fontFamily = Body, fontWeight = FontWeight.Normal, fontSize = 13.sp))
+        .merge(SpanStyle(fontFamily = Body, fontWeight = FontWeight.Normal, fontSize = 13.sp, fontFeatureSettings = TNUM))
         .merge(ParagraphStyle(lineHeight = 20.sp))
 
+    /**
+     * `.meta` and its siblings (mockups:113, :126, :134, :137): date, time and hex lines. The design declares none of
+     * them bold or medium — all `font-weight` requests in the mockup's CSS are the two buttons and `.status`, which is
+     * the system bar, not our text — and `instrument_sans_variable.ttf` measures `wght min=400 default=400 max=700`,
+     * so a `FontWeight.Medium` on the un-pinned family asked for an instance the loader never instantiates: it drew 400
+     * while claiming 500. Normal is what the design asks for and what has always rendered.
+     */
     val caption = TextStyle.Default
         .merge(
             SpanStyle(
-                fontFamily = Body, fontWeight = FontWeight.Medium, fontSize = 11.sp,
-                letterSpacing = 0.09.em
+                fontFamily = Body, fontWeight = FontWeight.Normal, fontSize = 11.sp,
+                letterSpacing = 0.09.em, fontFeatureSettings = TNUM
             )
         )
 }

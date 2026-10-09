@@ -4,6 +4,8 @@ import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
@@ -141,104 +143,111 @@ fun EvenlightContent(
     reduceMotion: Boolean
 ) {
     nav.BackHandler()
-    val night = when (nav.current) {
-        // `Card` is absent on purpose: the mockup's third frame is paper, and the card screen paints its own
-        // surface, so the theme that wraps it must not be the night one. When a card is the right pane of the
-        // expanded stack, `StackScreen` and `CardScreen` each carry their own colours explicitly.
-        is Screen.Stack, is Screen.Shoot -> true
-        else -> false
-    }
-    // The system bars are the other half of the night flag. `Theme.Evenlight`'s parent is the dark Material theme,
-    // whose status-bar icons are white, and under edge-to-edge (enforced for targetSdk 35) those icons sit on our
-    // own paper: white on `#F4EFE6` is unreadable, which is what Step 10's device pass showed on Tonight and Card.
-    // The icons are not a surface we can paint, so the one thing that can be set is their appearance, and the value
-    // comes from the same flag that chose the theme - never from the system dark-mode setting, which is not what
-    // decides whether this app is looking at the night.
+    // The flag is about the *surface the system bars sit on*, not the screen on top, so it needs the width: at
+    // >= 840 dp a card is the right pane of the stack, and the band behind the status icons is NightSurface even
+    // though `nav.current` is a Card. Keying it off `current` alone gave that arrangement dark icons on a dark
+    // band - found on the 160 dpi (≈1080 dp) pass, and invisible at the emulator's native 393 dp.
     val view = LocalView.current
     val window = (LocalContext.current as? Activity)?.window
-    SideEffect {
-        val w = window
-        if (w != null) {
-            val controller = WindowCompat.getInsetsController(w, view)
-            controller.isAppearanceLightStatusBars = !night
-            controller.isAppearanceLightNavigationBars = !night
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val cardOverStack = nav.current is Screen.Card && nav.under is Screen.Stack && maxWidth >= 840.dp
+        val night = when (nav.current) {
+            // A compact, full-screen card is `false`: the mockup's third frame is paper, and the card paints its own
+            // surface, so the icons over it must be dark. `Card` reading `cardOverStack` is the same paper answer for
+            // the pane's *content* - neither StackScreen nor CardScreen reads MaterialTheme (both name their surfaces),
+            // so for that arrangement this flag's only live consumer is the icon appearance below.
+            is Screen.Stack, is Screen.Shoot -> true
+            is Screen.Card -> cardOverStack
+            else -> false
         }
-    }
-    EvenlightTheme(dark = night) {
-        when (val screen = nav.current) {
-            is Screen.Tonight -> {
-                if (settings.isSet) {
-                    TonightScreen(
-                        settings = settings,
-                        records = records,
-                        held = held,
-                        onShoot = { nav.push(Screen.Shoot) },
-                        // Pushed, not rooted. Step 10 found that `goToRoot(Stack)` left the stack one deep, so the
-                        // back gesture from the Stack exited the app outright and Shoot could not be reached again
-                        // without relaunching it - a four-destination app that loses two of them to one gesture. The
-                        // plan's "destinations, not stops on the way to each other" was written about not walking
-                        // Tonight through Stack to get to Shoot; it was never a licence for the back gesture to
-                        // strand the user outside the app. Ledger R10.
-                        onStack = { nav.push(Screen.Stack) },
-                        onSetup = { nav.push(Screen.Setup) }
-                    )
-                } else {
-                    // Step 4: with no place set, Tonight *is* the setup form. The sun line and the countdown would
-                    // otherwise print an altitude computed for the Gulf of Guinea over a sky in Lahore.
-                    SetupScreen(
-                        store = store,
-                        current = settings,
-                        onSaved = { s ->
-                            onSettingsSaved(s)
-                            nav.replaceTop(Screen.Tonight)
-                        }
-                    )
-                }
+        // The system bars are the other half of the night flag. `Theme.Evenlight`'s parent is the dark Material theme,
+        // whose status-bar icons are white, and under edge-to-edge (enforced for targetSdk 35) those icons sit on our
+        // own paper: white on `#F4EFE6` is unreadable, which is what Step 10's device pass showed on Tonight and Card.
+        // The icons are not a surface we can paint, so the one thing that can be set is their appearance, and the value
+        // comes from the same flag that chose the theme - never from the system dark-mode setting, which is not what
+        // decides whether this app is looking at the night.
+        SideEffect {
+            val w = window
+            if (w != null) {
+                val controller = WindowCompat.getInsetsController(w, view)
+                controller.isAppearanceLightStatusBars = !night
+                controller.isAppearanceLightNavigationBars = !night
             }
-
-            is Screen.Setup -> SetupScreen(
-                store = store,
-                current = settings,
-                onSaved = { s ->
-                    onSettingsSaved(s)
-                    nav.goToRoot(Screen.Tonight)
+        }
+        EvenlightTheme(dark = night) {
+            when (val screen = nav.current) {
+                is Screen.Tonight -> {
+                    if (settings.isSet) {
+                        TonightScreen(
+                            settings = settings,
+                            records = records,
+                            held = held,
+                            onShoot = { nav.push(Screen.Shoot) },
+                            // Pushed, not rooted. Step 10 found that `goToRoot(Stack)` left the stack one deep, so the
+                            // back gesture from the Stack exited the app outright and Shoot could not be reached again
+                            // without relaunching it - a four-destination app that loses two of them to one gesture. The
+                            // plan's "destinations, not stops on the way to each other" was written about not walking
+                            // Tonight through Stack to get to Shoot; it was never a licence for the back gesture to
+                            // strand the user outside the app. Ledger R10.
+                            onStack = { nav.push(Screen.Stack) },
+                            onSetup = { nav.push(Screen.Setup) }
+                        )
+                    } else {
+                        // Step 4: with no place set, Tonight *is* the setup form. The sun line and the countdown would
+                        // otherwise print an altitude computed for the Gulf of Guinea over a sky in Lahore.
+                        SetupScreen(
+                            store = store,
+                            current = settings,
+                            onSaved = { s ->
+                                onSettingsSaved(s)
+                                nav.replaceTop(Screen.Tonight)
+                            }
+                        )
+                    }
                 }
-            )
 
-            is Screen.Shoot -> ShootScreen(
-                settings = settings,
-                controller = controller,
-                hasCamera = hasCamera,
-                onEnsureCamera = onEnsureCamera,
-                onPreviewReady = onPreviewReady,
-                reduceMotion = reduceMotion,
-                onFiled = { record ->
-                    // `records`/`held` are the activity's snapshot of the filesystem, and this is the only moment in
-                    // the session the app itself makes that snapshot wrong. Without the reload tonight's row keeps
-                    // rendering through the hole branch as "no photo" next to a card that exists - the gaps rule
-                    // honest in reverse - and it stays wrong until the process restarts.
-                    reloadData()
-                    nav.replaceTop(Screen.Card(record.date))
-                }
-            )
+                is Screen.Setup -> SetupScreen(
+                    store = store,
+                    current = settings,
+                    onSaved = { s ->
+                        onSettingsSaved(s)
+                        nav.goToRoot(Screen.Tonight)
+                    }
+                )
 
-            is Screen.Stack -> StackScreen(
-                records = records,
-                held = held,
-                onOpen = { date -> nav.push(Screen.Card(date)) },
-                detail = null
-            )
+                is Screen.Shoot -> ShootScreen(
+                    settings = settings,
+                    controller = controller,
+                    hasCamera = hasCamera,
+                    onEnsureCamera = onEnsureCamera,
+                    onPreviewReady = onPreviewReady,
+                    reduceMotion = reduceMotion,
+                    onFiled = { record ->
+                        // `records`/`held` are the activity's snapshot of the filesystem, and this is the only moment in
+                        // the session the app itself makes that snapshot wrong. Without the reload tonight's row keeps
+                        // rendering through the hole branch as "no photo" next to a card that exists - the gaps rule
+                        // honest in reverse - and it stays wrong until the process restarts.
+                        reloadData()
+                        nav.replaceTop(Screen.Card(record.date))
+                    }
+                )
 
-            is Screen.Card -> {
-                val overStack = nav.under is Screen.Stack
-                // The pane is chosen here, not inside StackScreen, because at compact width a card is a full screen
-                // and at expanded width it is the right 62 % of the stack it was opened from - and only this branch
-                // knows the card is on the stack. The earlier shape of this file asked `nav.under` for a Card while
-                // `current` was the Stack, which is the one arrangement the navigation can never produce: opening a
-                // card pushes it *over* the stack, so the 38/62 split was dead code and every foldable opened a
-                // full-screen card instead (Step 9).
-                BoxWithConstraints(Modifier.fillMaxSize()) {
-                    if (overStack && maxWidth >= 840.dp) {
+                is Screen.Stack -> StackScreen(
+                    records = records,
+                    held = held,
+                    onOpen = { date -> nav.push(Screen.Card(date)) },
+                    detail = null
+                )
+
+                is Screen.Card ->
+                    // The pane is chosen here, not inside StackScreen, because at compact width a card is a full screen
+                    // and at expanded width it is the right 62 % of the stack it was opened from - and only this branch
+                    // knows the card is on the stack. The earlier shape of this file asked `nav.under` for a Card while
+                    // `current` was the Stack, which is the one arrangement the navigation can never produce: opening a
+                    // card pushes it *over* the stack, so the 38/62 split was dead code and every foldable opened a
+                    // full-screen card instead (Step 9). `cardOverStack` is that same test, hoisted with the width so
+                    // the system-bar flag above can read the arrangement it describes.
+                    if (cardOverStack) {
                         StackScreen(
                             records = records,
                             held = held,
@@ -260,10 +269,13 @@ fun EvenlightContent(
                             cardFile = store.cardFile(screen.date),
                             hasRawPhoto = record != null && canReadRaw(record),
                             onRawPhoto = { record?.let(onOpenRaw) },
-                            onShare = { onShareCard(screen.date) }
+                            onShare = { onShareCard(screen.date) },
+                            // Only a full-screen card owns the bars: it paints paper behind them, so it pads them. Inside
+                            // the expanded pane the stack already painted and padded that band - padding again would
+                            // push the card down by a second bar height. Ledger R13.
+                            modifier = Modifier.statusBarsPadding().navigationBarsPadding()
                         )
                     }
-                }
             }
         }
     }

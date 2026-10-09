@@ -88,7 +88,10 @@ fun StackScreen(
                     StackList(days, holes, byDate, largeFont, twoUp = false, gap = 14.dp, onOpen = onOpen)
                 }
                 Column(
-                    Modifier.weight(62f).fillMaxSize().padding(end = 20.dp, top = 14.dp),
+                    // No gutter of its own: `CardScreen` declares its 20 dp sides and 14 dp top, and a second set here
+                    // put the card 40 dp from the right edge under a design that draws 20. Same one-mechanism rule the
+                    // width cap got for the same reason.
+                    Modifier.weight(62f).fillMaxSize(),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     // No cap here: `CardScreen` caps its own card, and a second `widthIn` on the way in composes

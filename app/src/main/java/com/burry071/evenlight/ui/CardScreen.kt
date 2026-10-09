@@ -18,8 +18,6 @@ import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -186,11 +184,13 @@ fun CardScreen(
     modifier: Modifier = Modifier
 ) {
     Column(
-        modifier
-            .fillMaxSize()
+        // `modifier` goes *after* the background, not before `fillMaxSize`, because the bar insets belong to the
+        // caller: a full-screen card extends its paper behind the system bars and pads its content, while the
+        // expanded pane is already inside StackScreen's padded band and must not pad twice. Both orders paint the
+        // band; only one of them leaves the card's first line under a gesture bar.
+        Modifier.fillMaxSize()
             .background(EvenlightColors.Paper)
-            .statusBarsPadding()
-            .navigationBarsPadding()
+            .then(modifier)
             .padding(horizontal = 20.dp)
             .padding(top = 14.dp)
     ) {
