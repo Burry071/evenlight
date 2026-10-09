@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Fraunces at the design's winner-strip variation (mockups:111, `.strip b`: opsz 48, SOFT 70, weight 400). Two
+  consumers, one file: EvenlightType.strip on screen, and CardRenderer's display typeface, whose 116f strip name is
+  the same design role drawn into the PNG. The card's date line shares it rather than carrying a fourth instance.
+-->
+<font-family xmlns:app="http://schemas.android.com/apk/res-auto">
+    <font
+        app:font="@font/fraunces_variable"
+        app:fontStyle="normal"
+        app:fontWeight="400"
+        app:fontVariationSettings="'wght' 400, 'opsz' 48, 'SOFT' 70, 'WONK' 1" />
+</font-family>

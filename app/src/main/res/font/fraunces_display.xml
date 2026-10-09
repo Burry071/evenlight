@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The bundled fraunces_variable.ttf has fvar wght default=900 (name 4 "Fraunces 9pt Black", OS/2 usWeightClass 900),
+  so loading it directly renders every serif line in Black. This family pins the design's 400 plus the optical-size
+  and softness the mockups declare for display type (design/evenlight-mockups.html:58, `.big`). opsz 72 is a feature
+  tag AND an axis; it is set here rather than in a feature string because Compose 1.9.0 has no fontVariationSettings
+  on SpanStyle or TextStyle (verified against the artifact) and fontFeatureSettings cannot express wght.
+  Read by EvenlightType.hero and by nothing else; the smaller serif roles have their own families.
+-->
+<font-family xmlns:app="http://schemas.android.com/apk/res-auto">
+    <font
+        app:font="@font/fraunces_variable"
+        app:fontStyle="normal"
+        app:fontWeight="400"
+        app:fontVariationSettings="'wght' 400, 'opsz' 72, 'SOFT' 60, 'WONK' 1" />
+</font-family>

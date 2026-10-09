@@ -3,6 +3,7 @@ package com.burry071.evenlight
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Typeface
+import androidx.core.content.res.ResourcesCompat
 import com.burry071.evenlight.card.CardRenderer
 import com.burry071.evenlight.card.headerFor
 import com.burry071.evenlight.capture.FrameSource
@@ -123,21 +124,28 @@ class EvenlightController(
 
     companion object {
         /**
-         * The device-shaped controller. The typefaces are the two bundled variable TTFs from Task 9 Step 1: the
-         * strip name is laid out for Fraunces at 116f, and with `Typeface.DEFAULT` it crowded the strip - which was
-         * the known cost of landing the nightly path one night, and is retired here.
+         * The device-shaped controller. The strip name is laid out for Fraunces at 116f, and with `Typeface.DEFAULT`
+         * it crowded the strip - which was the known cost of landing the nightly path one night, and is retired here.
          *
-         * `Resources.getFont` is API 26 and this module's minSdk is 27, so no compatibility branch is needed. The
-         * faces are read from the resource table rather than from `androidx.compose.ui.text.font.Font`, because the
-         * card is drawn with a `Canvas` and a `Paint`, not with Compose: the two halves of the app share the file,
-         * not the type.
+         * The display face comes from `R.font.fraunces_strip`, the `<font-family>` XML that pins Fraunces to weight
+         * 400 at the design's strip variation, rather than from `R.font.fraunces_variable` directly: that file's
+         * default instance is "Fraunces 9pt Black" (wght 900, opsz 9), so a raw load put every card name in Black.
+         *
+         * Loaded through `ResourcesCompat.getFont`, not `Resources.getFont`: the platform call throws
+         * `Resources$NotFoundException: Font resource ID #0x7f070001` on a `<font-family>` XML, which is how this
+         * crashed on first launch after the variation files landed. `ResourcesCompat` parses the family itself
+         * (verified in core-1.15.0: no reference to `Resources.getFont` anywhere in the class) and is the same loader
+         * Compose's `AndroidFontLoader` uses for `Font(R.font.…)`, so the card PNG and the screens resolve the one
+         * variation rather than two.
          */
         fun forDevice(activity: Context, store: Store, settings: Settings, frame: FrameSource): EvenlightController =
             EvenlightController(
                 store = store, settings = settings, frame = frame,
                 renderer = CardRenderer(
-                    activity.resources.getFont(R.font.fraunces_variable),
-                    activity.resources.getFont(R.font.instrument_sans_variable)
+                    // `ResourcesCompat.getFont` is @Nullable; a null here means the resource table is broken, and the
+                    // silent fallback to the system face is the exact bug this file exists to keep out of the card.
+                    requireNotNull(ResourcesCompat.getFont(activity, R.font.fraunces_strip)),
+                    requireNotNull(ResourcesCompat.getFont(activity, R.font.instrument_sans_variable))
                 ),
                 time = Timebase.SYSTEM,
                 displayRotation = {

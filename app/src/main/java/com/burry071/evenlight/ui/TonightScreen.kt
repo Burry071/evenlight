@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
@@ -29,10 +30,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
@@ -47,6 +45,7 @@ import java.time.Duration
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZonedDateTime
+import java.util.Locale
 import kotlinx.coroutines.delay
 
 /**
@@ -105,22 +104,28 @@ fun TonightScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .statusBarsPadding()
+            // Edge-to-edge at targetSdk 35 puts the gesture bar over content at low densities: at 160 dpi the
+            // Stack/Setup row sat under the bar. Only the full-bleed Shoot preview may ignore this.
+            .navigationBarsPadding()
             .padding(horizontal = 20.dp)
             .padding(top = 14.dp),
         verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
-        Text(settings.place.ifBlank { "evenlight" }, style = EvenlightType.caption, color = EvenlightColors.Muted)
+        Text(
+            settings.place.ifBlank { "evenlight" }.uppercase(Locale.ROOT),
+            style = EvenlightType.eyebrow,
+            color = EvenlightColors.Muted
+        )
 
-        // The mockup sets the number itself in a softer instance of the display face (`in <em>14</em> min`), so the
-        // digits carry their own variation string while the words around them stay on EvenlightType.hero.
+        // The mockup softens the digits alone (`.big em` = SOFT 90, mockups:60). SOFT is a variation axis, and
+        // ui-text 1.9.0 cannot set axes on a span, so the number rides the hero's instance instead: one Fraunces
+        // cut for the whole line, at the design's weight and optical size.
         Box(Modifier.padding(top = 12.dp)) {
             Text(
                 buildAnnotatedString {
                     if (minutesToSunset >= 0) {
                         append("in ")
-                        withStyle(SpanStyle(fontFeatureSettings = "'opsz' 72, 'SOFT' 90, 'WONK' 1")) {
-                            append(minutesToSunset.toString())
-                        }
+                        append(minutesToSunset.toString())
                         append(" min")
                     } else {
                         // Past sunset the hero keeps the Shoot chip's signed vocabulary rather than inventing a
@@ -135,7 +140,7 @@ fun TonightScreen(
 
         Text(
             "sunset ${clockText(sunset.hour, sunset.minute)} · evening $eveningNumber",
-            style = EvenlightType.caption,
+            style = EvenlightType.sub,
             color = EvenlightColors.Muted,
             modifier = Modifier.padding(top = 9.dp)
         )
@@ -236,7 +241,7 @@ fun ShootPill(
     ) {
         Text(
             label,
-            style = EvenlightType.body.copy(fontWeight = FontWeight.Medium),
+            style = EvenlightType.bodyStrong,
             color = MaterialTheme.colorScheme.onPrimary
         )
     }

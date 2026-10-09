@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -72,7 +73,10 @@ fun StackScreen(
     val byDate = remember(records) { records.groupBy { it.date } }
     val largeFont = LocalDensity.current.fontScale > 1.15f
 
-    BoxWithConstraints(modifier.fillMaxSize().background(EvenlightColors.NightSurface).statusBarsPadding()) {
+    BoxWithConstraints(
+        modifier.fillMaxSize().background(EvenlightColors.NightSurface)
+            .statusBarsPadding().navigationBarsPadding()
+    ) {
         val expanded = maxWidth >= 840.dp
         val twoUp = !expanded && maxWidth >= 600.dp
 

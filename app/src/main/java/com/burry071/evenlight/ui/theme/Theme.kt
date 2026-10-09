@@ -8,8 +8,10 @@ import androidx.compose.runtime.Composable
 /**
  * Exists so that `MaterialTheme` cannot supply its own defaults: the scheme is built from [EvenlightColors] only.
  *
- * `dark` is a parameter rather than `isSystemInDarkTheme()` because the stack and the detail screen are dark for
- * the same reason the sky is - they are the night - and they stay dark on a phone set to light mode (spec §8).
+ * `dark` is a parameter rather than `isSystemInDarkTheme()` because the stack is dark for the same reason the sky
+ * is - it is the night - and it stays dark on a phone set to light mode. Which destinations get it is decided in
+ * `EvenlightContent`, from the one `class="phone night"` frame in `design/evenlight-mockups.html`; spec section 8
+ * says nothing about a dark card, and the mockup's card frame is paper.
  *
  * `Palette.HAIRLINE` is consumed here for the first time; it has no other user in the app, and an unused palette
  * constant is a colour the design claims and the chrome never shows.

@@ -12,34 +12,44 @@ import com.burry071.evenlight.R
 
 /**
  * The bundled variable TTFs (Task 9 Step 1, commit `36af0ad`), not downloadable fonts: the manifest carries no
- * INTERNET permission, so Google Fonts' downloadable-font provider could not fetch a single glyph. Whether Compose
- * applies the `opsz`/`SOFT`/`WONK` axes is a device-review claim (ledger R5): nothing in `:app:testDebugUnitTest`
- * renders text, and the fallback if a device ignores them is the font's default instance, not a different family.
+ * INTERNET permission, so Google Fonts' downloadable-font provider could not fetch a single glyph.
  *
- * Two forced departures from the brief's Step 2 snippet, both in form only - same families, weights, sizes,
- * tracking, leading and variation strings:
- *  1. ui-text 1.9.0 removed the flat `TextStyle(fontFamily = …, lineHeight = …)` constructor (it is now internal,
- *     built from `SpanStyle` + `ParagraphStyle`), so the styles are assembled with `merge` on `TextStyle.Default`.
- *  2. ui-text 1.9.0 has no `fontVariationSettings` on `SpanStyle`, on `TextStyle.copy`, or on material3's `Text`
- *     (verified by compiling against the artifact), so the axis strings ride in `fontFeatureSettings`, which
- *     Android's text layout hands to minikin; minikin parses `'SOFT'`/`'WONK'` (upper-case tags) as variation
- *     axes and `'opsz'` as the optical-size feature. That path is legal from API 26 and minSdk is 27, but only a
- *     screen can confirm the glyph shapes actually change.
+ * Fraunces needs three families, not one, and the reason is in the file's own tables. `fraunces_variable.ttf` ships
+ * `fvar wght min=100 default=900 max=900`, `opsz 9–144 default 9`, name 4 "Fraunces 9pt Black", OS/2
+ * usWeightClass=900: whatever you ask for, the default instance is the Black cut at the smallest optical size. The
+ * design asks for weight 400 and, role by role, `opsz` 72 / 48 / 40 (mockups:58, :111, :125), which the opsz axis
+ * draws as different letterforms rather than a scaled copy. So each size band gets a `<font-family>` XML that pins
+ * the axes, and the styles below point at the band they belong to.
+ *
+ * That route, and not the axis strings this file used to carry in `fontFeatureSettings`, because Compose ui-text
+ * 1.9.0 has no `fontVariationSettings` on `SpanStyle` or `TextStyle` (verified against the artifact's class files:
+ * 0 occurrences of the field name, where `fontFeatureSettings` has 2), and `wght` is a variation axis, not an
+ * OpenType feature tag, so a feature string can never reach it. The framework reads `app:fontVariationSettings` on
+ * `FontFamilyFont` (android-35 attrs.xml) at load time; `ResourcesCompat.getFont` - which is what Compose's
+ * `Font(resId)` and `EvenlightController.forDevice` both go through - accepts a family XML, so the same three files
+ * serve the screens and the card PNG. Ledger R5, which called the axis strings a device-review claim, is closed by
+ * the screenshots taken in this step: on the previous build they were inert, and the serif rendered Black.
  */
-private val Display = FontFamily(Font(R.font.fraunces_variable))
+private val FrauncesDisplay = FontFamily(Font(R.font.fraunces_display))
+private val FrauncesTitle = FontFamily(Font(R.font.fraunces_title))
+private val FrauncesStrip = FontFamily(Font(R.font.fraunces_strip))
 private val Body = FontFamily(Font(R.font.instrument_sans_variable))
+private val BodyStrong = FontFamily(Font(R.font.instrument_sans_medium))
 
 /**
  * Every `Text` in every screen carries an explicit `style` from this object - that is the load-bearing half of the
  * rule. `MaterialTheme.typography` is Roboto, so one `Text("…")` without a style renders in the wrong family at
  * the wrong size and nothing fails.
+ *
+ * ui-text 1.9.0 removed the flat `TextStyle(fontFamily = …, lineHeight = …)` constructor (it is now internal, built
+ * from `SpanStyle` + `ParagraphStyle`), so each style below is assembled with `merge` on `TextStyle.Default`.
  */
 object EvenlightType {
     val hero = TextStyle.Default
         .merge(
             SpanStyle(
-                fontFamily = Display, fontWeight = FontWeight.Normal, fontSize = 44.sp,
-                letterSpacing = (-0.028).em, fontFeatureSettings = "'opsz' 72, 'SOFT' 60, 'WONK' 1"
+                fontFamily = FrauncesDisplay, fontWeight = FontWeight.Normal, fontSize = 44.sp,
+                letterSpacing = (-0.028).em
             )
         )
         .merge(ParagraphStyle(lineHeight = 46.sp))
@@ -47,8 +57,7 @@ object EvenlightType {
     val title = TextStyle.Default
         .merge(
             SpanStyle(
-                fontFamily = Display, fontWeight = FontWeight.Normal, fontSize = 24.sp,
-                fontFeatureSettings = "'opsz' 40, 'SOFT' 60, 'WONK' 1"
+                fontFamily = FrauncesTitle, fontWeight = FontWeight.Normal, fontSize = 24.sp
             )
         )
 
@@ -56,14 +65,27 @@ object EvenlightType {
     val strip = TextStyle.Default
         .merge(
             SpanStyle(
-                fontFamily = Display, fontWeight = FontWeight.Normal, fontSize = 29.sp,
-                fontFeatureSettings = "'opsz' 48, 'SOFT' 70, 'WONK' 1"
+                fontFamily = FrauncesStrip, fontWeight = FontWeight.Normal, fontSize = 29.sp
             )
         )
 
     val body = TextStyle.Default
         .merge(SpanStyle(fontFamily = Body, fontWeight = FontWeight.Normal, fontSize = 15.sp))
         .merge(ParagraphStyle(lineHeight = 22.sp))
+
+    /** The only two places the design asks for 500 are the buttons (mockups:65, :101), and they use this, not `body.copy(fontWeight = Medium)`. */
+    val bodyStrong = TextStyle.Default
+        .merge(SpanStyle(fontFamily = BodyStrong, fontWeight = FontWeight.Medium, fontSize = 15.sp))
+        .merge(ParagraphStyle(lineHeight = 22.sp))
+
+    /** `.eyebrow` (mockups:55): the uppercase label above a heading. Callers uppercase the text themselves. */
+    val eyebrow = TextStyle.Default
+        .merge(SpanStyle(fontFamily = Body, fontWeight = FontWeight.Normal, fontSize = 11.sp, letterSpacing = 0.11.em))
+
+    /** `.sub` (mockups:61): the line under a heading, tabular so a time does not jitter. */
+    val sub = TextStyle.Default
+        .merge(SpanStyle(fontFamily = Body, fontWeight = FontWeight.Normal, fontSize = 13.sp))
+        .merge(ParagraphStyle(lineHeight = 20.sp))
 
     val caption = TextStyle.Default
         .merge(

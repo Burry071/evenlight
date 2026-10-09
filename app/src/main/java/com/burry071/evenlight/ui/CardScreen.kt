@@ -14,14 +14,16 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
@@ -162,8 +164,13 @@ fun BandField(bands: List<Color>, modifier: Modifier = Modifier) {
 /**
  * The card, on arrival, and whenever the stack is opened onto it.
  *
- * Night theme: the detail screen is the night, and it stays night on a phone set to light mode (spec section 8).
- * The artefact itself is paper - that is the card that was drawn - so the two are deliberately different surfaces.
+ * Paper, not night: in `design/evenlight-mockups.html` - which spec 6.1 names the visual source of truth, and
+ * Task 9's header says wins over a screen when they disagree - exactly one phone carries `class="phone night"`,
+ * the stack. Frame 3 is `phone grain`, and `.artefact` is `background: var(--card)` on that paper. The earlier
+ * version of this file painted the screen `NightSurface` and cited "spec section 8" for it; section 8 says no
+ * such thing, and Task 8 already ruled that no spec rule decides a dark *card* (`Header.night` is false there).
+ * When this screen is the right pane of the expanded stack it is a paper card on the night surface around it,
+ * which is what the artefact is: paper that was drawn, held up against the dark.
  *
  * `cardMaxWidth` is the design system's cap on how large a card may be drawn, not a layout convenience: the mockup
  * sizes the card as an object on a surface, so a wide window gets a centred 340 dp card (420 dp in the expanded
@@ -181,8 +188,9 @@ fun CardScreen(
     Column(
         modifier
             .fillMaxSize()
-            .background(EvenlightColors.NightSurface)
+            .background(EvenlightColors.Paper)
             .statusBarsPadding()
+            .navigationBarsPadding()
             .padding(horizontal = 20.dp)
             .padding(top = 14.dp)
     ) {
@@ -240,7 +248,7 @@ fun CardDetail(
             Modifier
                 .fillMaxWidth()
                 .height(240.dp)
-                .background(EvenlightColors.NightHairline)
+                .background(EvenlightColors.Hairline)
         )
         // The actions belong to a card that exists. On a hole, or while a card PNG cannot be read, this screen has a
         // placeholder and a caption and nothing to press - which is what the caption promises, and why an
@@ -262,7 +270,7 @@ fun CardDetail(
         Text(
             "filed automatically · nothing to press",
             style = EvenlightType.caption,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+            color = EvenlightColors.Muted,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(bottom = 12.dp)
@@ -274,20 +282,31 @@ fun CardDetail(
 private fun CardAction(label: String, onClick: () -> Unit) {
     Column(
         Modifier
-            .heightIn(min = 48.dp)
+            // `IntrinsicSize.Max`, not a bare wrap-width: the underline below is `fillMaxWidth`, so a greedy width
+            // made the first action take the whole row and squeezed `share` to one letter per line (Step 10). `Max`
+            // is the unwrapped label, which is the width `.acts a` has in the mockup, where the border-bottom spans
+            // the text and flex items neither grow nor shrink. `Min` would be worse: it is the longest *word*, so
+            // "raw photo" would break in half and underline only "photo".
+            .width(IntrinsicSize.Max)
+            // The 48 dp target is invisible padding, not a bigger label, and material3 has the modifier that means
+            // exactly that: it forces this node's own size up to 48 dp square without resizing the children, so the
+            // underline stays the text width the mockup draws while the clickable area still meets the target.
+            // Measured on this host before use: `minimumInteractiveComponentSize` is in material3 1.4.0's
+            // `InteractiveComponentSizeKt` and not in foundation 1.9.0.
+            .minimumInteractiveComponentSize()
             .clickable(onClick = onClick)
     ) {
         Text(
             label,
             style = EvenlightType.body.copy(fontSize = 13.sp),
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+            color = EvenlightColors.Muted,
             modifier = Modifier.padding(bottom = 2.dp)
         )
         Box(
             Modifier
                 .fillMaxWidth()
                 .height(1.dp)
-                .background(MaterialTheme.colorScheme.outline)
+                .background(EvenlightColors.Hairline)
         )
     }
 }

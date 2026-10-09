@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Instrument Sans at weight 500. The bundled fraunces/instrument files are loaded as their default instance, and
+  instrument_sans_variable.ttf defaults at wght=400 (fvar 400–700), so `FontWeight.Medium` on a plain Font() request
+  asked for a cut the Typeface never gets. The design uses 500 in exactly two places - `.pill`/`.shutter` (mockups:65,
+  :101) - so those two call sites read this family instead.
+-->
+<font-family xmlns:app="http://schemas.android.com/apk/res-auto">
+    <font
+        app:font="@font/instrument_sans_variable"
+        app:fontStyle="normal"
+        app:fontWeight="500"
+        app:fontVariationSettings="'wght' 500, 'wdth' 100" />
+</font-family>

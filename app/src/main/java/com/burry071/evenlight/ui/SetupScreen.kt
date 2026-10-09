@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.OutlinedTextField
@@ -56,10 +57,13 @@ fun SetupScreen(
             .fillMaxSize()
             .background(EvenlightColors.Paper)
             .statusBarsPadding()
+            .navigationBarsPadding()
             .padding(horizontal = 20.dp)
             .padding(top = 14.dp)
     ) {
-        Text("Setup", style = EvenlightType.caption, color = EvenlightColors.Muted)
+        // The eyebrow class is uppercase in the design (mockups:31, :55), and Tonight's already follows it; this
+        // screen's label was the one exception.
+        Text("SETUP", style = EvenlightType.eyebrow, color = EvenlightColors.Muted)
         Text(
             "the sun line needs a place",
             style = EvenlightType.title,

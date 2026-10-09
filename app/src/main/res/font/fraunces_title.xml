@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Fraunces at the design's heading variation (mockups:125, `.stackhead b`: opsz 40, SOFT 60, weight 400). Same
+  mechanism as fraunces_display.xml; the axis values differ because Fraunces' opsz axis redraws the letterforms, so
+  one instance cannot serve both 44sp and 24sp. Read by EvenlightType.title.
+-->
+<font-family xmlns:app="http://schemas.android.com/apk/res-auto">
+    <font
+        app:font="@font/fraunces_variable"
+        app:fontStyle="normal"
+        app:fontWeight="400"
+        app:fontVariationSettings="'wght' 400, 'opsz' 40, 'SOFT' 60, 'WONK' 1" />
+</font-family>

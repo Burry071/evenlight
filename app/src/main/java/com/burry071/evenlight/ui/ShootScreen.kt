@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.material3.Text
@@ -32,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -39,7 +42,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
@@ -111,7 +113,8 @@ fun ShootScreen(
     val delta = Duration.between(sunset, now).toMinutes()
 
     Box(modifier = modifier.fillMaxSize().background(EvenlightColors.NightSurface)) {
-        // Full bleed, under the bars: this is the one screen that does not take statusBarsPadding.
+        // Full bleed, under the bars: the preview is the only surface in the app that runs beneath the status bar,
+        // so the screen root takes no insets and the overlays inset themselves (the chip below, the shutter above).
         AndroidView(
             factory = { context ->
                 PreviewView(context).apply { scaleType = PreviewView.ScaleType.FILL_CENTER }
@@ -128,6 +131,9 @@ fun ShootScreen(
             color = EvenlightColors.Paper,
             modifier = Modifier
                 .align(Alignment.TopStart)
+                // The preview runs under the status bar (edge-to-edge at targetSdk 35), and so did this chip: on the
+                // device the clock and battery icons sat on top of "sunset 17:40".
+                .statusBarsPadding()
                 .padding(start = 16.dp, top = 14.dp)
                 .clip(chipShape())
                 .background(EvenlightColors.NightSurface.copy(alpha = 0.5f))
@@ -170,15 +176,22 @@ fun ShootScreen(
             Box(
                 Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 18.dp, start = 20.dp, end = 20.dp)
-                    .fillMaxWidth()
+                    // The preview stays full bleed; the control on top of it does not, or the gesture bar covers it.
+                    .navigationBarsPadding()
+                    .padding(bottom = 18.dp)
                     .graphicsLayer {
                         scaleX = pressScale.floatValue
                         scaleY = pressScale.floatValue
                     }
+                    // The design's shutter hugs its label (`.shutter div`: padding 0 40px, height 52px,
+                    // box-shadow 0 6px 18px -8px) and is centred by the wrapper, not stretched across it. Compose's
+                    // shadow takes an elevation only - no offset, no spread - so 8dp stands in for that one blurred
+                    // offset layer; the press scale lives on the wrapper so the pill and its shadow shrink together.
+                    .shadow(8.dp, PillShape, clip = false)
                     .heightIn(min = 52.dp)
                     .clip(PillShape)
                     .background(EvenlightColors.Card)
+                    .padding(horizontal = 40.dp)
                     .clickable(
                         interactionSource = interaction,
                         indication = null,
@@ -200,7 +213,7 @@ fun ShootScreen(
             ) {
                 Text(
                     "Shoot",
-                    style = EvenlightType.body.copy(fontWeight = FontWeight.Medium),
+                    style = EvenlightType.bodyStrong,
                     color = EvenlightColors.Ink
                 )
             }

@@ -1,17 +1,22 @@
 package com.burry071.evenlight.ui
 
+import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
 import com.burry071.evenlight.EvenlightController
 import com.burry071.evenlight.core.EveningRecord
 import com.burry071.evenlight.data.Settings
@@ -78,7 +83,10 @@ class Nav internal constructor(internal val stack: SnapshotStateList<Screen>) {
         if (stack.isEmpty()) stack.add(screen) else stack[stack.size - 1] = screen
     }
 
-    /** Tonight and Stack are destinations, not stops on the way to each other. */
+    /**
+     * Put `screen` at the bottom of a fresh stack, dropping everything else. Used by Setup's save, which returns to
+     * Tonight and must not leave the form underneath it.
+     */
     fun goToRoot(screen: Screen) {
         stack.clear()
         stack.add(screen)
@@ -107,9 +115,12 @@ fun Nav.BackHandler() {
 }
 
 /**
- * The night flag is a parameter, not `isSystemInDarkTheme()`: the stack and the detail are dark because they are the
- * night, and they stay dark on a phone set to light mode (spec section 8). The viewfinder is dark too - it is the
- * same hour, seen through a lens - and Tonight and Setup are the paper half of the app.
+ * The night flag is a parameter, not `isSystemInDarkTheme()`: the stack is dark because it is the night, and it
+ * stays dark on a phone set to light mode. Which screens that covers is the mockup's answer, not this file's
+ * invention - `design/evenlight-mockups.html` (spec 6.1's source of truth) puts `class="phone night"` on exactly
+ * one of its four frames, the stack. Frame 2 is the viewfinder, whose chrome the CSS draws as a night scrim over
+ * a night sky, and frame 3 is `phone grain`: the card detail is paper, because the artefact on it is paper.
+ * Tonight and Setup are the paper half of the app.
  */
 @Composable
 fun EvenlightContent(
@@ -131,8 +142,27 @@ fun EvenlightContent(
 ) {
     nav.BackHandler()
     val night = when (nav.current) {
-        is Screen.Stack, is Screen.Card, is Screen.Shoot -> true
+        // `Card` is absent on purpose: the mockup's third frame is paper, and the card screen paints its own
+        // surface, so the theme that wraps it must not be the night one. When a card is the right pane of the
+        // expanded stack, `StackScreen` and `CardScreen` each carry their own colours explicitly.
+        is Screen.Stack, is Screen.Shoot -> true
         else -> false
+    }
+    // The system bars are the other half of the night flag. `Theme.Evenlight`'s parent is the dark Material theme,
+    // whose status-bar icons are white, and under edge-to-edge (enforced for targetSdk 35) those icons sit on our
+    // own paper: white on `#F4EFE6` is unreadable, which is what Step 10's device pass showed on Tonight and Card.
+    // The icons are not a surface we can paint, so the one thing that can be set is their appearance, and the value
+    // comes from the same flag that chose the theme - never from the system dark-mode setting, which is not what
+    // decides whether this app is looking at the night.
+    val view = LocalView.current
+    val window = (LocalContext.current as? Activity)?.window
+    SideEffect {
+        val w = window
+        if (w != null) {
+            val controller = WindowCompat.getInsetsController(w, view)
+            controller.isAppearanceLightStatusBars = !night
+            controller.isAppearanceLightNavigationBars = !night
+        }
     }
     EvenlightTheme(dark = night) {
         when (val screen = nav.current) {
@@ -143,7 +173,13 @@ fun EvenlightContent(
                         records = records,
                         held = held,
                         onShoot = { nav.push(Screen.Shoot) },
-                        onStack = { nav.goToRoot(Screen.Stack) },
+                        // Pushed, not rooted. Step 10 found that `goToRoot(Stack)` left the stack one deep, so the
+                        // back gesture from the Stack exited the app outright and Shoot could not be reached again
+                        // without relaunching it - a four-destination app that loses two of them to one gesture. The
+                        // plan's "destinations, not stops on the way to each other" was written about not walking
+                        // Tonight through Stack to get to Shoot; it was never a licence for the back gesture to
+                        // strand the user outside the app. Ledger R10.
+                        onStack = { nav.push(Screen.Stack) },
                         onSetup = { nav.push(Screen.Setup) }
                     )
                 } else {
