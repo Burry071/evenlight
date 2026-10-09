@@ -15,8 +15,9 @@ java {
 // FixtureEquivalenceTest reads the cross-language goldens (fixtures/*.png) off disk and writes the pinned
 // bands back next to them, so the directory is named here from the root project layout instead of being
 // guessed from the test JVM's working directory - the same reason :app declares its manifest input
-// (app/build.gradle.kts). Declaring it as an input also means a regenerated PNG cannot leave the test
-// reporting a stale green.
+// (app/build.gradle.kts). Declaring it as an input makes Gradle re-run the test when a fixture changes;
+// noticing that a regenerated PNG no longer matches its checked-in bands is the assertion's job, not this
+// line's, and an up-to-date check that skipped the JVM would report nothing either way.
 val fixturesDir = rootProject.layout.projectDirectory.dir("fixtures")
 
 tasks.withType<Test>().configureEach {
