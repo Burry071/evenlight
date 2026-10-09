@@ -3,6 +3,9 @@ package com.burry071.evenlight.data
 import com.burry071.evenlight.core.EveningRecord
 import com.burry071.evenlight.core.Json
 import java.io.File
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.time.LocalDateTime
 
 class Store(val root: File) {
@@ -11,6 +14,35 @@ class Store(val root: File) {
     private val cards = File(base, "cards").apply { mkdirs() }
     private val records = File(base, "records").apply { mkdirs() }
     private val settingsFile = File(base, "settings.json")
+
+    /**
+     * Findings 1.6: every write goes here. `target.writeBytes` truncates the day's only JSON to zero and then
+     * refills it in place, so a kill between the truncate and the refill leaves a half-written - or empty - record
+     * that `decode` reads back as null: the evening vanishes with no hole, the exact loss record-before-render
+     * exists to prevent. Writing the bytes to a sibling temp file and renaming over the target makes the swap a
+     * single atomic step on the same filesystem, so the reader sees either the whole old file or the whole new one
+     * and never a mix. The temp is prefixed and suffixed so it never matches the patterns the readers key on
+     * (`attemptsFor`'s `$date-attempt-` prefix, `corruptRecords`'s `.json` suffix) even if a crash does leave one.
+     * On any failure the temp is deleted so a botched write cannot strand a stray file beside the good one.
+     */
+    private fun atomicWrite(target: File, content: ByteArray) {
+        val tmp = File(target.parentFile, "tmp-${target.name}.tmp")
+        try {
+            tmp.writeBytes(content)
+            try {
+                Files.move(
+                    tmp.toPath(), target.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE
+                )
+            } catch (e: AtomicMoveNotSupportedException) {
+                // Some filesystems refuse ATOMIC_MOVE; a plain replace still keeps the reader off a half-written
+                // target far more often than in-place truncation, so fall back rather than lose the write.
+                Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            }
+        } finally {
+            if (tmp.exists()) tmp.delete()
+        }
+    }
 
     /**
      * Built from parts, not with DateTimeFormatter. This string becomes a filename, a record field, and the key
@@ -39,12 +71,13 @@ class Store(val root: File) {
     fun rawFile(shutter: String, attempt: Int): File = File(raw, "$shutter-attempt-$attempt.jpg")
 
     fun writeRaw(jpeg: ByteArray, shutter: String, attempt: Int): File =
-        rawFile(shutter, attempt).apply { writeBytes(jpeg) }
+        rawFile(shutter, attempt).apply { atomicWrite(this, jpeg) }
 
     fun recordFile(date: String, attempt: Int): File =
         if (attempt <= 1) File(records, "$date.json") else File(records, "$date-attempt-$attempt.json")
 
-    fun writeRecord(r: EveningRecord, attempt: Int): File = recordFile(r.date, attempt).apply { writeText(r.encode()) }
+    fun writeRecord(r: EveningRecord, attempt: Int): File =
+        recordFile(r.date, attempt).apply { atomicWrite(this, r.encode().toByteArray()) }
 
     /**
      * Every file is read inside `catch (t: Throwable)`, not `Exception`: [Json.tryParse] recurses once per bracket
@@ -86,7 +119,7 @@ class Store(val root: File) {
     } ?: 0
 
     fun cardFile(date: String): File = File(cards, "$date.png")
-    fun writeCard(date: String, png: ByteArray): File = cardFile(date).apply { writeBytes(png) }
+    fun writeCard(date: String, png: ByteArray): File = cardFile(date).apply { atomicWrite(this, png) }
     fun eveningsWithCards(): Set<String> = cards.listFiles()?.map { it.nameWithoutExtension }?.toSet() ?: emptySet()
 
     fun wordingTotal(): Int = readRecords().size
@@ -99,8 +132,10 @@ class Store(val root: File) {
     }
 
     fun saveSettings(s: Settings) {
-        settingsFile.writeText(
-            Json.encode(Json.Obj(listOf("place" to Json.Str(s.place), "lat" to Json.Num(s.lat), "lon" to Json.Num(s.lon))))
+        // `toByteArray()` is UTF-8, the same charset `writeText` used, so the on-disk bytes are unchanged.
+        atomicWrite(
+            settingsFile,
+            Json.encode(Json.Obj(listOf("place" to Json.Str(s.place), "lat" to Json.Num(s.lat), "lon" to Json.Num(s.lon)))).toByteArray()
         )
     }
 }

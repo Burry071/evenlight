@@ -3,11 +3,14 @@ package com.burry071.evenlight
 import com.burry071.evenlight.core.EveningRecord
 import com.burry071.evenlight.data.Store
 import java.io.File
+import java.io.IOException
+import java.io.RandomAccessFile
 import java.time.LocalDateTime
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -148,5 +151,31 @@ class StoreTest {
         val store = temp()
         File(store.root, "evenlight/settings.json").writeText("{ truncated")
         assertEquals(com.burry071.evenlight.data.Settings.UNSET, store.loadSettings())
+    }
+
+    @Test fun aRecordWriteWhoseRenameFailsLeavesTheOlderRecordWholeAndNoTempBehind() {
+        // Finding 1.6 teeth, shaped by what this host actually does (measured here, JDK 21, Windows): the
+        // read-only-target probe the review suggested does NOT discriminate on this machine - an atomic rename
+        // with REPLACE_EXISTING silently overwrites a read-only file, while the old in-place writeText failed on
+        // it with the original bytes intact; the two paths agree there. What does make the rename genuinely fail
+        // here is a reader holding the file open (AccessDeniedException), and an in-place write passes straight
+        // through that reader and replaces its bytes mid-flight. So the atomic contract is pinned this way: when
+        // the swap cannot happen the evening keeps its previous record unchanged, the write throws instead of
+        // quietly corrupting, and the failed attempt leaves no tmp- file behind - that last assertion is the
+        // finally-delete branch, without which every interrupted shot would litter the records directory.
+        val store = temp()
+        store.writeRecord(record("2026-10-08"), 1)
+        val file = store.recordFile("2026-10-08", 1)
+        val original = file.readBytes()
+        RandomAccessFile(file, "r").use {
+            assertThrows(IOException::class.java) {
+                store.writeRecord(record("2026-10-08").copy(wording = "a line that never lands"), 1)
+            }
+            assertArrayEquals("the evening's only JSON must survive a write that cannot complete", original, file.readBytes())
+            assertFalse(File(file.parentFile, "tmp-${file.name}.tmp").exists())
+        }
+        // And the same store still writes fine once the reader is gone - the guard above is not a broken store.
+        store.writeRecord(record("2026-10-08").copy(wording = "a line that lands"), 1)
+        assertEquals("a line that lands", store.readRecords().single().wording)
     }
 }
