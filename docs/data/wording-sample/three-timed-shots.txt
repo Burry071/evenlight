@@ -1,0 +1,6 @@
+shot 1 | 2026-10-10-attempt-3.json | source=model rejected=false | first +2817 ms | last write +24240 ms
+        line: the stars were bright against an ash-colored sky.
+shot 2 | 2026-10-10-attempt-4.json | source=template rejected=true | first +1112 ms | last write +12379 ms
+        line: flint light, measured from this sky
+shot 3 | 2026-10-10-attempt-5.json | source=model rejected=false | first +128 ms | last write +14305 ms
+        line: the stars shimmered beneath an ash-lit sky.

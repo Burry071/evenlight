@@ -8,7 +8,9 @@ returns `false` the moment `modelFile.exists()` is `false`, and every failure ro
 
 There is also no download inside the app. The manifest carries no `INTERNET` permission
 (`app/src/main/AndroidManifest.xml`, asserted by `app/src/test/java/com/burry071/evenlight/ManifestTest.kt`), so
-the only way weights get on the device is a person putting them there.
+the only way weights get on the device is a person putting them there. One limit, because it is the kind a test can
+hide: that test reads the manifest I wrote, not the merged artifact the build installs, so the check you can trust
+is `grep uses-permission -A1 app/build/intermediates/merged_manifests/debug/*/AndroidManifest.xml` after a build.
 
 ## Why it is not in this repo
 
@@ -74,12 +76,13 @@ backend, engine already warm. The target device is unmeasured, so these are not 
 |---|---|
 | Model init | 4,566 ms |
 | Peak RSS during a call | 1,269 MB |
-| One line, in isolation | ~1.2 s |
+| One line, in isolation | 1,080 / 1,247 / 3,502 ms (min / median / max of three calls) |
 | Free RAM with the model resident | ~132 MB, low-memory killer active |
 
 Two consequences worth knowing before you bother. Inside the app the line arrives 11-21 s after the record is
-filed, not 1.2 s after the shutter, which is why the record is written first: an evening on disk in 0.13-2.8 s does
-not depend on the model surviving. And the 10 s give-up marker around the call bounds nothing, because
+filed, not the one-to-three-and-a-half seconds the same call takes on its own, which is why the record is written
+first: an evening on disk in 0.13-2.8 s does not depend on the model surviving. And the 10 s give-up marker around
+the call bounds nothing, because
 `withTimeoutOrNull` cannot interrupt a blocking native call - measured on the same emulator, a call that ran 10.5 s
 still delivered its line past the marker.
 

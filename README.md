@@ -46,7 +46,9 @@ index under it, the latest card, and a shutter that is never disabled at any hou
 
 **Read the pixels before you read anything else in this file.** All five screens and both cards above come from the
 emulator's synthetic camera scene, not from a sky. There is no real evening in this repository. The app has never
-been pointed at a balcony, and there is deliberately no strip of cards here presented as a run of evenings.
+been pointed at a balcony, and there is deliberately no strip of cards here presented as a run of evenings. They are
+not one continuous session, either: the two numbers in the Setup fields are the example that screen's own hint
+prints, so they are not the pair that produces the sunset time the other four show.
 
 ## Try it in twenty seconds, without Android or the model
 
@@ -144,8 +146,10 @@ lowercase letters, spaces, and `. , - '` - and it became one the hard way.
 
 Nineteen shots through the installed app with the weights present and the engine warm. The verifier changed
 halfway through, so this is two experiments and the rows are separate. All nineteen records are in
-`docs/data/wording-sample/`, and `docs/data/wording-sample/PROVENANCE.md` has a nine-line script that recounts
-them; I ran it, and it prints 19 shots, 12 answered, 8 accepted, 4 rejected, 7 silent.
+`docs/data/wording-sample/`, and `docs/data/wording-sample/PROVENANCE.md` has the script that recounts them; I ran
+it, and it prints 19 shots, 12 answered, 8 accepted, 4 rejected, 7 silent, and 7 of the 8 accepted lines still
+passing the gate that ships. That last number is the one to quote: seven of the twelve answers the model actually
+gave belonged on a card.
 
 | gate | shots | answered | silent | rejected | accepted | accepted wrongly |
 |---|---|---|---|---|---|---|
@@ -176,11 +180,17 @@ actually given, and `applyWording`'s comment in
 ### What the seven silences were, and were not
 
 They were not slowness, and I said they were. Once the seven had their own provenance value, their timestamps told
-the rest: the seven silent shots are exactly the seven fired 5-13 seconds after their neighbour. Every shot spaced
-22 s or more produced an answer, on the same build with the same weights. The reason is the measured cost of a
-call: the pre-model record write lands 0.13-2.8 s after the capture tap, and the model's rewrite lands 11-21 s
-after that, so a second shot at twelve seconds arrives while the first call is still inside the engine. One engine,
-two callers.
+the rest. Every record carries its shutter minute, and that alone is enough to see the pattern: all seven silences
+sit in 23:24, 23:25 and 23:26, three minutes that hold nine shots of which two answered, while the ten shots before
+and after that window all answered. `PROVENANCE.md` prints that grouping from the files. The sharper version - the
+silent shots fired 5-13 seconds after their neighbour, the answered ones at least 22 s apart - came from the device's
+file mtimes, read live with `stat`, and I deleted those records when I put the emulator back the way I found it. So
+that half is my measurement, and this repository is honest enough to say which half is not in it.
+
+What is in it is `docs/data/wording-sample/three-timed-shots.txt`: three shots on the shipping build, fired about a
+minute apart, each with the time its record first appeared and the time it was written last. The pre-model record
+write lands 0.13-2.8 s after the capture tap and the model's rewrite 11.3-21.4 s after that write, so a second shot
+twelve seconds later arrives while the first call is still inside the engine. One engine, two callers.
 
 Two things follow, and both are in the open rather than in a footnote. `withTimeoutOrNull` around a blocking native
 call bounds nothing: measured on the same emulator, a call that ran 10.5 s still delivered its line past the 10 s
@@ -190,8 +200,9 @@ guard is strong. It is documented at the declaration in
 `app/src/main/java/com/burry071/evenlight/wording/EngineHolder.kt`, and this paragraph is the other half of that.
 
 The honest half of the honest half: I fired those shots in a burst because I was testing a code path, not living
-with an app. One evening a day is the cadence this is for, and at that cadence these records say 12 answered out of
-12 spaced shots, not 6 out of 13. Both numbers are in the table.
+with an app. One evening a day is the cadence this is for, and in this sample the ten shots that were not fired
+two-to-four to a minute all answered. The table's two rows are both of it, and neither one is the number I would
+have published without looking.
 
 ### The one picture that explains the design
 
@@ -221,8 +232,10 @@ the number I remembered about it instead.
   have to do in a browser yourself.
 - Real on-disk cost is **1,092,957,056 bytes ≈ 1.02 GiB**, not 557 MiB, because the engine writes a
   508,539,776-byte XNNPack cache beside the weights. Measured on the emulator.
-- Model init 4,566 ms, peak RSS during a call 1,269 MB, about 1.2 s per line in isolation, and roughly 132 MB of
-  free RAM with the model resident and the low-memory killer active. All emulator numbers.
+- Model init 4,566 ms, peak RSS during a call 1,269 MB, 1,080 / 1,247 / 3,502 ms per line in isolation
+  (min / median / max), and roughly 132 MB of free RAM with the model resident and the low-memory killer active. All
+  emulator numbers. The isolated call is not the call a user waits on: inside the app the same rewrite lands 11-21 s
+  after the record is filed, and I have not split that difference up, so I am not going to explain it here.
 - The app is complete without the model. No weights, no download, no failure: the card uses the template line and
   the record says `wording_source: "none"`.
 - Two variable fonts are bundled, 554 KB, with their OFL texts in `LICENSES/`. Android cannot address a weight axis

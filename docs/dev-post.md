@@ -1,7 +1,7 @@
 # Evenlight: I gave the AI the smallest job in the app, and measured why
 
 **Tagline:** one balcony, one sky, one card an evening.
-**Repo:** `Burry071/evenlight` (PENDING: link, needs the push approval)
+**Repo:** `Burry071/evenlight` (not pushed yet; the link lands when it is)
 **Hacktoberfest 2026, Week 1, theme "Touch Grass."**
 
 Every entry in this theme seems to be about getting people outside. Mine takes a photo of the sky from a place you
@@ -9,9 +9,10 @@ are already sitting and turns it into a card. It does not know whether you went 
 that, because it is the most interesting thing about the project: the app claims exactly what it measures and
 nothing else.
 
-The other interesting thing is that I ran a language model on the phone, found it was bad at the obvious task, and
-gave it a smaller one. That decision is the spine of this post, and every number behind it comes from a file in the
-repo.
+The other interesting thing is that I ran a language model on the phone - on an emulator standing in for a phone, for
+every measurement in this post, which is its own story below - found it was bad at the obvious task, and gave it a
+smaller one. That decision is the spine of this post, and every number behind it is either in a file in the
+repo or labelled out loud as a measurement that is not.
 
 ## What the card is
 
@@ -31,8 +32,9 @@ Python is so that a change to those numbers cannot pass in one language alone.
 
 ## The measurement that decided the architecture
 
-I wanted the model to look at eight colours and name the evening. So I ran it on real data, before writing any app
-code. Five designs, a 1B parameter open-weight model on CPU, the same eighteen calls on the last two.
+I wanted the model to look at eight colours and name the evening. So I ran it on the inputs the app would actually
+hand it, before writing any app code. Five designs, a 1B parameter open-weight model on CPU, the same eighteen calls
+on the last two.
 
 | what I asked for | what came back |
 |---|---|
@@ -44,8 +46,9 @@ code. Five designs, a 1B parameter open-weight model on CPU, the same eighteen c
 
 Read the middle row again. Handed the actual vocabulary and told to pick a word from it, it got the answer
 *wrong every single time out of six*, inventing phrases that were not on the list. Handed three choices, it was
-almost perfect: 17 of 18 on-list. Then I shuffled the three and it changed its mind in five of six attempts, and
-the 1/6 reproduced on a second runtime, so it was not a quantisation artifact or a bug in my harness. One case is
+almost perfect: 17 of 18 on-list. Then I shuffled the three and it changed its mind in five of six attempts, and the
+one stable answer reproduced across two independent runtimes - which rules out one runtime's quantisation being the
+whole story, and is the only evidence I have that it is not an artifact of my harness. One case is
 worth describing: the same three candidate names in three different orders came back with three different winners.
 
 That is the whole finding, and it flipped my design. The model is perfectly capable of phrasing something it is
@@ -73,8 +76,8 @@ halves of that paragraph turned out to be wrong about something.
 
 Nineteen shots, weights present, engine already warm. **Seven of nineteen** got a line that belonged on the card.
 Every number below is read out of the JSON the app files, and all nineteen records are in the repo at
-`docs/data/wording-sample/` with a nine-line recount next to them, so this is arithmetic you can check rather than
-a claim you have to trust.
+`docs/data/wording-sample/` with their own recount script beside them, so this is arithmetic you can check rather
+than a claim you have to trust.
 
 They are two experiments, not one, because the verifier changed halfway through:
 
@@ -100,25 +103,33 @@ none beyond that. The cost is honest and I would rather publish it than hide it:
 rejection, so the rejection rate goes up.
 
 The seven silences are the second one, and none of them were visible until the schema could name them. The app filed
-all seven as `wording_source: "none"`, which in my schema meant "there is no model on this phone." There was a model
-on the phone. The field could not tell "never consulted" from "asked and got nothing," so any rate built on it was
+all seven as `wording_source: "none"`, which in my schema meant "there is no model on this device." There was a model
+on the device. The field could not tell "never consulted" from "asked and got nothing," so any rate built on it was
 uncomputable, and it was wrong in the flattering direction: a model that failed looked like a model that was absent.
 There is a fourth value now, `"no-answer"`, and that makes the two failures separable instead of one share of
-evenings: **did it answer** (12 of 19) and **was the answer valid** (4 of the 12 rejected, 5 of 12 if you count the
-markdown line the old gate wrongly passed). One number about latency, one about judgement.
+evenings: **did it answer** (12 of 19) and **was that answer valid** (7 of the 12 under the gate that ships - the
+other five are the four the gate rejected plus the markdown line the old gate wrongly passed). One number about
+latency, one about judgement. Both are recountable from the record files, and the script in
+`docs/data/wording-sample/PROVENANCE.md` prints the 7.
 
-Once the seven had their own value, their timestamps told the rest of the story. Timed off the records' own write
-times on the device: the eleven shots fired at least 22 s after their neighbour, plus the first shot of the run, all
-produced an answer; the seven fired 5-13 s after one produced nothing. Same build, same weights, same model - the
-only variable is spacing. Measured on the current build, the model's line lands 12.4 s, 14.3 s and 24.2 s after the
-shutter tap, so a
-shot twelve seconds later arrives while the previous call is still inside the engine. The seven no-answers are not a
-model that refuses. They are one engine and two callers, and the reason the closing path now holds a guard across
-the whole native call rather than across the timeout.
+Once the seven had their own value, their timestamps told the rest of the story. Every record carries its shutter
+minute, and that alone is enough to see it: all seven silences sit in 23:24, 23:25 and 23:26, three minutes that hold
+nine shots, of which two answered. The ten shots before and after that window all answered. Same build, same weights,
+same model - the only variable is spacing. I have a sharper version of that sentence from the device's file mtimes at
+second resolution, that the fast shots went 5-13 s after their neighbour and the answered ones at least 22 s. It is
+not in the repo, because I deleted those records when I put the emulator back the way I found it, so count that half
+as my measurement rather than something you can recount.
+
+What is in the repo is `docs/data/wording-sample/three-timed-shots.txt`: three shots on the current build, fired
+about a minute apart, each with the time its record first appeared and the time it was written last. The model's line
+lands between 12.4 s and 24.2 s after the shutter tap, which is 11.3 to 21.4 s after the record already existed. So a
+shot taken twelve seconds later arrives while the previous call is still inside the engine. The seven no-answers are
+not a model that refuses. They are one engine and two callers, and the reason the closing path now holds a guard
+across the whole native call rather than across the timeout.
 
 The honest half: I fired those shots in a burst because I was testing a code path, not living with an app. One
-evening a day is the cadence the thing is for, and at that cadence these records say 12 answered out of 12 spaced
-shots, not 6 out of 13. Both numbers are in the table above. The one I would have published without looking is the
+evening a day is the cadence the thing is for, and in this sample the ten shots that were not fired two-to-four to a
+minute all answered. Both numbers are in the table above. The one I would have published without looking is the
 flattering one.
 
 Traps I checked before trusting any of it, because a bad sample is worse than no sample:
@@ -165,8 +176,9 @@ change to that line can pass silently. Every other fixture is at least 64 pixels
 identity. That is why the odd-sized fixture exists.
 
 **Precision across the border.** One side was doing channel arithmetic in 32-bit floats and the other in 64-bit.
-That disagreement showed up as 13,161 differing channel outcomes over the 893 rows of one real card, and it looked
-like a rendering bug. Canonical precision is now 64-bit on both sides, and the Python port is told never to touch
+That disagreement showed up as 13,161 differing outcomes, counted by brute force over every field row from 0 to 892,
+every band pair and every channel pair from (0,0) to (255,255). It is an enumeration of the blend formula, not a
+rendered card, and I mention that because it looked like a rendering bug. Canonical precision is now 64-bit on both sides, and the Python port is told never to touch
 `numpy.float32`.
 
 **Name ties.** Two vocabulary words can sit at the same distance from a measured colour. The earlier entry in the
@@ -181,30 +193,42 @@ Nobody has to install an Android app, and nobody has to download a gigabyte of w
 python tools/python/skycard.py photo.jpg -o card.png --print-json
 ```
 
-It prints the eight bands, which band won, and the name, then writes a card. On a small image that is about a fifth
-of a second; on a 4032x3024 phone photo, 4.7 seconds. The band arithmetic is the same arithmetic as the Kotlin,
-line for line, and a test on both sides asserts against the same four PNG fixtures, so agreement is transitive and
-neither language can drift without a failure. 87 Kotlin core tests, 39 app tests, 13 Python tests.
+It prints the eight bands, which band won, and the name, then writes a card. Timed as whole processes on this box,
+two runs each: 0.27 s and 0.33 s for a 128x96 fixture, 4.7 s and 6.1 s for a 4032x3024 JPEG at 2 MB. That second file
+is a synthetic gradient with noise in it at the resolution a common phone shoots at, not a photograph - nothing in
+this repo is a real sky yet - and the spread between its two runs is why I give both numbers instead of a confident
+one. The band arithmetic is the same arithmetic as the Kotlin, line for line, and a test on both sides asserts
+against the same four PNG fixtures, so agreement is transitive and neither language can drift without a failure.
+87 Kotlin core tests, 39 app tests, 13 Python tests.
 
 ## The costs, stated before you discover them
 
 - The model file is 584,417,280 bytes and it is gated: you accept Gemma's terms in your own browser to download it.
   I am not allowed to commit it, and GitHub's 100 MB per-file limit means I could not.
-- Total on-disk cost on the phone is about 1.02 GiB, not 557 MiB, because the engine writes a 508,539,776-byte
-  (485 MiB) XNNPack cache beside the file. Measured on the device, not estimated.
+- Total on-disk cost is about 1.02 GiB, not 557 MiB, because the engine writes a 508,539,776-byte (485 MiB) XNNPack
+  cache beside the model. Both figures came from `stat` on the emulator's filesystem, not estimated - but they are
+  emulator figures, and I have not measured a phone yet, so an ARM cache of a different size is possible.
 - Model init measured 4,566 ms and peak RSS during a call 1,269 MB, both on the emulator; the timing a user actually
   feels is in the failure-rate section above - the line lands 11-21 s after the record is filed - and every one of
-  those numbers is x86_64, not ARM. PENDING: the phone I actually use, read from `getprop` and `/proc/meminfo`
-  rather than from my own memory of the box. And the 10 s give-up marker belongs re-checked there, because on the
-  emulator it turned out to bound nothing: `withTimeoutOrNull` cannot interrupt a blocking native call, and a call
-  that ran 10.5 s still delivered its line past the marker.
+  those numbers is x86_64, not ARM. The phone I actually use is the missing measurement, and I would rather name that
+  gap than round it away: it needs `getprop` and `/proc/meminfo` read off the device, not my memory of this box. The
+  10 s give-up marker belongs re-checked there too, because on the emulator it turned out to bound nothing:
+  `withTimeoutOrNull` cannot interrupt a blocking native call, and a call that ran 10.5 s still delivered its line
+  past the marker.
 - The debug APK is 61,231,992 bytes (58.4 MiB) with zero model weights in it. That is the inference library's native
   code, compiled for four ABIs.
 - Two variable fonts are bundled, 554 KB. Android cannot address a weight axis through the API people expect
   (`fontFeatureSettings` is for OpenType features, and `wght` is not one), so the variation is pinned in a
   `<font-family>` XML and loaded through `ResourcesCompat`, because `Resources.getFont` throws on a family file.
-- The manifest has no `INTERNET` permission. A test reads the *merged* manifest and asserts it, because a
-  dependency can smuggle one in and the claim would die quietly.
+- The app asks for one runtime permission, `CAMERA`, and a test asserts the manifest has no `INTERNET`. Read the next
+  sentence before you trust that bullet: the test opens `src/main/AndroidManifest.xml`, the file I wrote, not the
+  *merged* manifest the build actually installs, so a dependency that smuggled `INTERNET` in through manifest merging
+  would pass the test and break the promise. I did check the merged output by hand, debug and release: `CAMERA`, plus
+  the local-receiver permission androidx generates for itself, and no `INTERNET` in either - but that check is a
+  command you have to re-run after `assembleDebug`, not a test that fails for you.
+  `grep uses-permission -A1 app/build/intermediates/merged_manifests/debug/*/AndroidManifest.xml`.
+  Knowing the guarantee is weaker than the test makes it look is the point; a test can hide exactly that from its own
+  author.
 
 ## What this app does not do
 
