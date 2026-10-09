@@ -115,7 +115,7 @@ class EvenlightController(
             // the rewrite is best-effort, and a failed best-effort is not a failed shot.
             val upgraded = runCatching {
                 // `consulted` is ensure()'s actual return, not an assumption: "no model installed" and
-                // "asked and got nothing back in 10 s" are different facts, and the device run proved that
+                // "asked and got nothing back" are different facts, and the device run proved that
                 // recording both as "none" makes the README's failure rate uncomputable (applyWording).
                 val consulted = engine.ensure()
                 val candidate = if (consulted) engine.line(match.name, record.bandsHex, altitude) else null

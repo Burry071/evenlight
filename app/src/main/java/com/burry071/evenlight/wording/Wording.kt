@@ -42,10 +42,11 @@ object Wording {
  * asked, not over every evening filed - `Store.wordingTotal()` is the count of all records and is the wrong
  * denominator here. A null candidate is not one answer but two, and conflating them is a measured bug: the device
  * filed seven evenings as `"none"` while the weights were present and the engine was warm, because a call that
- * produced nothing inside the budget looked exactly like "no model installed" - which made the failure-rate
- * denominator uncomputable. `consulted` is the controller's `engine.ensure()` result and separates them:
- * `"no-answer"` means asked and nothing came back, `"none"` means never asked at all.
- * Task 12 reports two rates and does not merge them: answered/consulted, and rejected/answered.
+ * produced nothing looked exactly like "no model installed" - which made the failure-rate denominator uncomputable.
+ * `consulted` is the controller's `engine.ensure()` result and separates them: `"no-answer"` means asked and nothing
+ * came back, `"none"` means never asked at all.
+ * Task 12 reports answered/consulted and rejected/answered as two rates, and keeps the shots taken before the gate
+ * became an allowlist out of the allowlist's rate - the two regimes are different experiments, not one sample.
  */
 fun applyWording(record: EveningRecord, candidate: String?, name: String, consulted: Boolean): EveningRecord {
     val verdict = candidate?.let { Verifier.check(it, name) }

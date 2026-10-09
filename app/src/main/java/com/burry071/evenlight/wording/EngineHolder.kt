@@ -107,7 +107,8 @@ class EngineHolder(private val context: Context) {
                     // delivered its line past the 10 s marker, so the marker bounds nothing. Releasing from the
                     // caller would let close() free the engine under a call still running, which is the
                     // use-after-free the guard exists for. If the block is cancelled before it starts, the flag
-                    // stays set and close() is skipped for the holder's life: a leak, which is the safe side.
+                    // stays set, so close() is skipped until some later call clears it - and if none ever comes,
+                    // the handle leaks, which is the safe side.
                     try {
                         val cfg = ConversationConfig(
                             systemInstruction = Contents.of(Wording.SYSTEM),
@@ -141,7 +142,11 @@ class EngineHolder(private val context: Context) {
      * because close() against a live native call is a use-after-free at shutter speed. The check-then-set on a
      * volatile flag is not atomic; it rests on every caller here (the shoot path, and both MainActivity close
      * sites) dispatching from the main thread, so a close interleaves with a shot only at suspension points,
-     * each of which the guard already spans. Its strength as a guard is unproven: no JVM test constructs an
+     * each of which the guard already spans. One window it does not cover: `ensure()` clears the flag before its
+     * `true ->` branch publishes `engine = e`, so a close() landing in that gap would no-op on the old engine and
+     * leave the new one published with `ready` false - and the next `ensure()` would build a second engine over an
+     * orphan. Unreachable for the same reason the guard works at all: `ensure()` resumes on the caller's main
+     * dispatcher and nothing between that resume and the publish can suspend. Its strength as a guard is unproven: no JVM test constructs an
      * EngineHolder (R18), so this is reasoned code, not covered code.
      */
     fun close() {

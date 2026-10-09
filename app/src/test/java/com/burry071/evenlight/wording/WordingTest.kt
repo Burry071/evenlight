@@ -12,7 +12,8 @@ import org.junit.Test
 /**
  * The prompt, the fallback and the provenance mapping are pure strings and pure data, so all of Task 11's logic is
  * testable without 1.02 GB of weights, without an Engine, and without Android: `applyWording` takes and returns
- * `:core` types only (R17), which is what moves the three-way branch out of the controller and into this file.
+ * `:core` types only (R17), which is what moves the four-way provenance mapping out of the controller and into
+ * this file.
  */
 class WordingTest {
     private val bands = listOf("#1E2438", "#2A3350", "#3C4A67", "#5C6B82", "#8A8375", "#B08A5E", "#C2854A", "#3A322A")
@@ -99,8 +100,9 @@ class WordingTest {
 
     @Test fun applyWordingSaysNoAnswerWhenTheConsultedEngineFellSilent() {
         // Measured: the device filed seven evenings as "none" while the weights were present and the engine warm,
-        // because a 10 s timeout inside line() looked exactly like "no model installed". That conflated pair made
-        // the README's failure rate uncomputable; "no-answer" is the consulted-and-silent half of it.
+        // because a line() that returned nothing looked exactly like "no model installed". That conflated pair made
+        // the README's failure rate uncomputable; "no-answer" is the consulted-and-silent half of it. The build
+        // that wrote those seven records could not tell a throw from a give-up, so this names the pair, not a cause.
         // wordingRejected stays false - the verifier never saw a line, so nothing was rejected.
         val out = applyWording(filed("an old model line", "model", false), null, "brassy", consulted = true)
         assertEquals(Wording.template("brassy"), out.wording)
