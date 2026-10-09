@@ -122,7 +122,9 @@ def winner(bands):
 
 def name_for(rgb, vocabulary=None):
     """Matcher.nameFor: nearest anchor in RGB, unweighted. Ties keep the earlier vocabulary entry."""
-    vocab = vocabulary or VOCABULARY
+    # `is None`, not falsiness: an injected empty vocabulary is a caller bug, and `or VOCABULARY` would
+    # answer it by silently naming against the real 35 words.
+    vocab = VOCABULARY if vocabulary is None else vocabulary
     best_word, best_d = vocab[0][0], None
     for word, anchor in vocab:
         d = sum((a - b) ** 2 for a, b in zip(rgb, anchor)) ** 0.5
