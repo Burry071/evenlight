@@ -222,6 +222,9 @@ fun EvenlightContent(
                     onEnsureCamera = onEnsureCamera,
                     onPreviewReady = onPreviewReady,
                     reduceMotion = reduceMotion,
+                    // The wording upgrade lands after the reveal (finding 1.4); this is the reload that makes the
+                    // screens re-read the upgraded record and PNG from disk when it does.
+                    reloadData = reloadData,
                     onFiled = { record ->
                         // `records`/`held` are the activity's snapshot of the filesystem, and this is the only moment in
                         // the session the app itself makes that snapshot wrong. Without the reload tonight's row keeps

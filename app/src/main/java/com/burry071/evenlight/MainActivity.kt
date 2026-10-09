@@ -63,7 +63,7 @@ class MainActivity : ComponentActivity() {
         store = Store(filesDir)
         settings = store.loadSettings()
         frame = FrameSource(this, ContextCompat.getMainExecutor(this))
-        controller = EvenlightController.forDevice(this, store, settings, frame)
+        controller = EvenlightController.forDevice(this, store, frame)
         hasCamera = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) ==
             PackageManager.PERMISSION_GRANTED
 
@@ -86,12 +86,13 @@ class MainActivity : ComponentActivity() {
                 canReadRaw = { record -> store.rawFile(record.shutter, record.attempt).canRead() },
                 onSettingsSaved = { s ->
                     settings = s
-                    // forDevice builds a fresh EngineHolder with the save; the old holder's initialised engine is
-                    // 1.2 GB of native memory that nothing references once the controller is dropped. Close the
-                    // controller being replaced before dropping it - close() defers to the holder's in-flight
-                    // guard, so saving settings mid-shot leaks the handle instead of racing the native call.
-                    controller?.close()
-                    controller = EvenlightController.forDevice(this, store, s, frame)
+                    // One controller, one engine, for the whole activity (finding 1.5): the engine is not
+                    // settings-dependent - it reads only filesDir/models/... - so tearing it down on a place or
+                    // lat/lon save buys nothing, and doing it while a shot is inside a native call is worse than
+                    // nothing: EngineHolder.close() skips while inFlight, so the dropped holder leaked its
+                    // 1,269 MB engine and the next shot built a second one beside it. The controller re-reads
+                    // settings from the store on every shot, so `s` is live without any rebuild; only the UI
+                    // snapshot and the record stack need refreshing here.
                     reload()
                 },
                 reloadData = { reload() },
@@ -114,10 +115,10 @@ class MainActivity : ComponentActivity() {
 
     /**
      * The activity owns the controller it built in onCreate, and the controller owns the only reference to a 1.2 GB
-     * native engine. onCreate rebuilds it, onSettingsSaved replaces it, and this is the third exit: without it the
-     * engine outlives the window that loaded it. close() cannot corrupt a shot in flight - the holder's guard skips
-     * cleanup rather than closing an engine inside a native call - it just leaks the handle in that case, which is
-     * the trade the holder documents.
+     * native engine - one controller now lives for the whole activity, settings saves included (finding 1.5), so this
+     * is its only exit. Without it the engine outlives the window that loaded it. close() cannot corrupt a shot in
+     * flight - the holder's guard skips cleanup rather than closing an engine inside a native call - it just leaks
+     * the handle in that case, which is the trade the holder documents.
      */
     override fun onDestroy() {
         super.onDestroy()

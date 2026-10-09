@@ -18,11 +18,12 @@ import kotlinx.coroutines.withTimeoutOrNull
  * Owns the optional on-device Gemma engine: absent by default, lazy, and every failure route lands on
  * `Wording.template`. The caller (T11's controller wiring) treats `false`/`null` as "no answer", never as an error.
  *
- * Not an interface with a fake: nothing in `app/src/test` constructs a controller, so an abstraction here would
- * exist for a test that is not being written (R18). This is the concrete holder; the JVM-testable part of Task 11
- * is `applyWording`, which needs no engine.
+ * Implements `WordingEngine` rather than being reached as a concrete type because finding 1.4 required a JVM test
+ * of the filing-versus-upgrade ordering, and that test needs an engine that blocks inside `ensure()` - the R18
+ * ruling ("no abstraction for a test that is not being written") retired the moment the test became mandatory.
+ * The controller takes the interface; nothing but this class touches the native engine.
  */
-class EngineHolder(private val context: Context) {
+class EngineHolder(private val context: Context) : WordingEngine {
     private var engine: Engine? = null
     private var ready = false
 
@@ -52,7 +53,7 @@ class EngineHolder(private val context: Context) {
      * `Dispatchers.Default` - and why the 30 s is a give-up marker, not a hard bound: `withTimeoutOrNull` cannot
      * interrupt a synchronous native call, so a hung init surfaces here only after it returns or the process dies.
      */
-    suspend fun ensure(): Boolean {
+    override suspend fun ensure(): Boolean {
         if (ready) return true
         if (timedOut) return false
         if (!modelFile.exists()) return false
@@ -95,7 +96,7 @@ class EngineHolder(private val context: Context) {
      * "no-answer" or "none". Cancellation is a third thing and is not swallowed here: it propagates, because a
      * cancelled caller is not a model that failed to answer.
      */
-    suspend fun line(name: String, bands: List<String>, altitudeDeg: Int): String? {
+    override suspend fun line(name: String, bands: List<String>, altitudeDeg: Int): String? {
         val e = engine ?: return null
         inFlight = true
         return try {
@@ -149,7 +150,7 @@ class EngineHolder(private val context: Context) {
      * dispatcher and nothing between that resume and the publish can suspend. Its strength as a guard is unproven: no JVM test constructs an
      * EngineHolder (R18), so this is reasoned code, not covered code.
      */
-    fun close() {
+    override fun close() {
         if (inFlight) return
         inFlight = true
         try {

@@ -228,7 +228,12 @@ fun CardDetail(
     onShare: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val bitmap by produceState<Bitmap?>(null, cardFile.path) {
+    val bitmap by produceState<Bitmap?>(null, cardFile.path, cardFile.length(), cardFile.lastModified()) {
+        // The path alone is the wrong key: the wording upgrade (finding 1.4) rewrites THIS file in place, and a
+        // reload that only refreshes `records` would recompose with the same path and keep showing the pre-upgrade
+        // PNG. Size plus mtime change exactly when a rewrite happened - and a provenance-only upgrade rewrites no
+        // PNG at all, so nothing here re-decodes for a byte that did not move. Both stats are read during
+        // composition, the same one-stat-per-visible-card trade StackScreen's `canReadRaw` already makes.
         value = withContext(Dispatchers.IO) {
             if (cardFile.canRead()) BitmapFactory.decodeFile(cardFile.path) else null
         }

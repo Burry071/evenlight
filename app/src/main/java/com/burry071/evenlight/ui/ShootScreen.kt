@@ -78,6 +78,7 @@ fun ShootScreen(
     onEnsureCamera: () -> Unit,
     onPreviewReady: (PreviewView) -> Unit,
     onFiled: (EveningRecord) -> Unit,
+    reloadData: () -> Unit,
     reduceMotion: Boolean,
     modifier: Modifier = Modifier
 ) {
@@ -199,11 +200,30 @@ fun ShootScreen(
                         onClick = {
                             busy = true
                             failure = null
-                            // CancellationException is not caught here and not folded: `shoot()` rethrows it, and a
-                            // destroyed window must not be asked to draw its own cancellation as a failure.
+                            // CancellationException is not caught here and not folded: `fileShot()` rethrows it,
+                            // and a destroyed window must not be asked to draw its own cancellation as a failure.
                             scope.launch {
-                                controller.shoot()
-                                    .onSuccess { shot = it }
+                                controller.fileShot()
+                                    .onSuccess { filed ->
+                                        // Spec 8, un-inverted (finding 1.4): the card the shutter just filed is
+                                        // revealed as soon as it is filed. The model's line is an upgrade that
+                                        // lands afterwards - with a model installed `shoot()` used to hold the
+                                        // reveal behind ~4.5 s of init plus ~1.2 s per line, for a card that was
+                                        // on disk in the first few hundred milliseconds.
+                                        shot = filed
+                                        scope.launch {
+                                            // Detached and best-effort: upgradeWording rethrows only
+                                            // cancellation. When it finishes, the record and the card on disk
+                                            // are newer than the activity's snapshot, so the reload is what
+                                            // swaps the revealed card to the upgraded PNG. `shot` is
+                                            // deliberately NOT reassigned: the reveal animation must not
+                                            // restart when the wording arrives, and the filmstrip never drew
+                                            // the line anyway - the mockup keeps it static for exactly this
+                                            // reason.
+                                            controller.upgradeWording(filed)
+                                            reloadData()
+                                        }
+                                    }
                                     .onFailure { failure = it.message ?: "capture failed" }
                                 busy = false
                             }
