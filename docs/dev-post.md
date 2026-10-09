@@ -1,0 +1,225 @@
+# Evenlight: I gave the AI the smallest job in the app, and measured why
+
+**Tagline:** one balcony, one sky, one card an evening.
+**Repo:** `Burry071/evenlight` (PENDING: link, needs the push approval)
+**Hacktoberfest 2026, Week 1, theme "Touch Grass."**
+
+Every entry in this theme seems to be about getting people outside. Mine takes a photo of the sky from a place you
+are already sitting and turns it into a card. It does not know whether you went anywhere. I want to be careful about
+that, because it is the most interesting thing about the project: the app claims exactly what it measures and
+nothing else.
+
+The other interesting thing is that I ran a language model on the phone, found it was bad at the obvious task, and
+gave it a smaller one. That decision is the spine of this post, and every number behind it comes from a file in the
+repo.
+
+## What the card is
+
+One photo, taken fresh by the camera. No gallery import, no presets, no saturation slider.
+
+Eight horizontal colour bands, read off the photo. A name, chosen by matching the most colourful band against a
+fixed vocabulary of 35 words. A date, and the sun's altitude in degrees at the moment the shutter was pressed. One
+line of text.
+
+Then, in the app rather than on the card, every evening you have recorded, newest first, with a visible gap where an
+evening is missing. A streak counter would have hidden the days I did not shoot, and the holes are the honest part
+of the data.
+
+The card is 1080x1440 pixels and the colour on it is the colour that was measured: no filter, no preset, and the
+renderer's only colour input is the eight values. The reason I wrote a second implementation of the sampler in
+Python is so that a change to those numbers cannot pass in one language alone.
+
+## The measurement that decided the architecture
+
+I wanted the model to look at eight colours and name the evening. So I ran it on real data, before writing any app
+code. Five designs, a 1B parameter open-weight model on CPU, the same eighteen calls on the last two.
+
+| what I asked for | what came back |
+|---|---|
+| "name the evening, 2-3 words, no digits" | obeyed the format, and copied nouns straight out of my input |
+| same, plus a ban list, exactly 2 words, temperature 1.0 | the same echo failure |
+| "choose from exactly these words" (the real 35-word vocabulary) | **0/6 on-list.** It answered `sun and stone`, `sun, concrete` |
+| "choose one of these three" | **on-list 17/18**, but **stable across reordering 1/6** |
+| the identical 18 calls on-device, CPU | **on-list 18/18, single-line 18/18, stable 1/6** |
+
+Read the middle row again. Handed the actual vocabulary and told to pick a word from it, it got the answer
+*wrong every single time out of six*, inventing phrases that were not on the list. Handed three choices, it was
+almost perfect: 17 of 18 on-list. Then I shuffled the three and it changed its mind in five of six attempts, and
+the 1/6 reproduced on a second runtime, so it was not a quantisation artifact or a bug in my harness. One case is
+worth describing: the same three candidate names in three different orders came back with three different winners.
+
+That is the whole finding, and it flipped my design. The model is perfectly capable of phrasing something it is
+handed. It is not capable of deciding. So the matcher owns every choice in this app, meaning every choice: which
+band wins, which order the bands go in, which word the evening gets. The model writes one line of prose from a word
+it did not pick, and it is not allowed to pick anything.
+
+```text
+name: brassy
+bands: #1E2438 #2A3350 #3C4A67 #5C6B82 #8A8375 #B08A5E #C2854A #3A322A
+sun: 9 degrees
+Write one line of four to eight words that contains the word brassy. Do not use any digit and do not add a
+colour that is not listed.
+```
+
+The system prompt is one sentence about what it may do, plus a ban on digits, brackets and newlines. Then a verifier
+reads the reply. It rejects the line if the reply is not lowercase, contains a digit, is more than eight words or
+fewer than four, or is missing the word it was given. On rejection, the card uses a template line, `brassy light,
+measured from this sky`, and a counter increments. The card still renders.
+
+That was the design. Then I put the weights on a device and ran nineteen shots through the installed app, and both
+halves of that paragraph turned out to be wrong about something.
+
+## The model's measured failure rate, which is the actual result
+
+Nineteen shots, weights present, engine already warm. **Seven of nineteen** got a line that belonged on the card.
+Every number below is read out of the JSON the app files, and all nineteen records are in the repo at
+`docs/data/wording-sample/` with a nine-line recount next to them, so this is arithmetic you can check rather than
+a claim you have to trust.
+
+They are two experiments, not one, because the verifier changed halfway through:
+
+| gate | shots | answered | silent | rejected | accepted | accepted wrongly |
+|---|---|---|---|---|---|---|
+| denylist (the first 13) | 13 | 6 | 7 | 1 | 5 | 1 |
+| allowlist (the last 6) | 6 | 6 | 0 | 3 | 3 | 0 |
+| all 19 | 19 | 12 | 7 | 4 | 8 | 1 |
+
+Blending those rows is the dishonest move, and it is tempting. The one wrongly accepted line is a miss the shipped
+gate cannot make, so it does not belong in the shipped gate's rate; and a six-shot row cannot carry a rejection
+rate at all (3 of 6 rejected reads as "the new gate is worse" and means nothing). So: the denylist's
+failure is a finding about denylists, and the allowlist's row is a finding that the sample is too small to publish
+a rate from.
+
+That last line - `the **ash** sky glowed softly as dusk fell.` - is the one I would not have found by reading the
+code. The verifier banned `#`, `<`, `{`, `(`. It did
+not ban `*`. The gate is a denylist, which means it has to be right every time, and a 1B model only has to be
+creative once. The card rendered the asterisks, literally, under the name `ash`, and the record said everything was
+fine because the line had passed. The denylist became an allowlist: a line may now contain lowercase letters, spaces,
+and `. , - '`. An allowlist only has to be right about the punctuation I actually want, and the vocabulary needs
+none beyond that. The cost is honest and I would rather publish it than hide it: any odd character now counts as a
+rejection, so the rejection rate goes up.
+
+The seven silences are the second one, and none of them were visible until the schema could name them. The app filed
+all seven as `wording_source: "none"`, which in my schema meant "there is no model on this phone." There was a model
+on the phone. The field could not tell "never consulted" from "asked and got nothing," so any rate built on it was
+uncomputable, and it was wrong in the flattering direction: a model that failed looked like a model that was absent.
+There is a fourth value now, `"no-answer"`, and that makes the two failures separable instead of one share of
+evenings: **did it answer** (12 of 19) and **was the answer valid** (4 of the 12 rejected, 5 of 12 if you count the
+markdown line the old gate wrongly passed). One number about latency, one about judgement.
+
+Once the seven had their own value, their timestamps told the rest of the story. Timed off the records' own write
+times on the device: the eleven shots fired at least 22 s after their neighbour, plus the first shot of the run, all
+produced an answer; the seven fired 5-13 s after one produced nothing. Same build, same weights, same model - the
+only variable is spacing. Measured on the current build, the model's line lands 12.4 s, 14.3 s and 24.2 s after the
+shutter tap, so a
+shot twelve seconds later arrives while the previous call is still inside the engine. The seven no-answers are not a
+model that refuses. They are one engine and two callers, and the reason the closing path now holds a guard across
+the whole native call rather than across the timeout.
+
+The honest half: I fired those shots in a burst because I was testing a code path, not living with an app. One
+evening a day is the cadence the thing is for, and at that cadence these records say 12 answered out of 12 spaced
+shots, not 6 out of 13. Both numbers are in the table above. The one I would have published without looking is the
+flattering one.
+
+Traps I checked before trusting any of it, because a bad sample is worse than no sample:
+
+- **The seed.** `SamplerConfig(topK = 20, topP = 0.9, temperature = 0.7)` sets no seed, so I was afraid consecutive
+  replies might come back identical and my "19 shots" would really be one. Seven distinct lines out of eight
+  accepted, one repeat (`the evening sky held an ash-like glow.` twice). Not pinned, but not independent either.
+- **The scene.** The emulator's back camera is a synthetic scene, so those nineteen shots are not nineteen skies.
+  They sample the model's phrasing and the gate's behaviour, which is what this section is about. The bands did move
+  between shots (14 distinct band sets out of 19, names `ash` 13 times and `flint` 6), but the sun altitude read
+  `-63°`, `-64°` or `-65°` on every card, because there is no sun in the test scene. So: no claim about weather
+  belongs here, and no claim about evenings either.
+- **What the gate cannot catch.** Two accepted lines claim stars - `the stars were bright against an ash-colored
+  sky.` and `the stars shimmered beneath an ash-lit sky.` - in a scene with no stars and a record that measures
+  none. A verifier can only check form, because the only facts this pipeline has are eight colours and one altitude.
+  That is the argument for the whole design: the colour on the card never comes from the model. If I had let the
+  model choose anything at all, "stars" would have been a plausible-looking lie on a card that claims to be a
+  measurement.
+
+What this is not yet: a number from the phone I own. The emulator is x86_64 with 3 GB of RAM and, with the model
+resident, about 132 MB free and the low-memory killer active. And it is nineteen shots of one synthetic scene, not a
+season. Two timings, because they are different measurements and averaging them would be a lie: the bare engine call
+in the probe cost 1,080 / 1,247 / 3,502 ms (min / median / max), while inside the app the rewrite lands 11-21 s
+after the record is filed. I have not split that difference up, so I am not going to explain it. Init 4,566 ms, peak
+RSS 1,269 MB, both from the emulator.
+
+## How the colour is measured, since that is where the bugs were
+
+The photo is resampled to 64 pixels wide with a hand-written bilinear filter, split into eight bands, and each band
+is averaged per channel. Mean luminance uses the sRGB linearisation, so a value below 0.03928 divides by 12.92 and
+anything above it goes through a power of 2.4. The winning band is the one with the largest gap between its biggest
+and smallest channel; a tie goes to the brighter band.
+
+Four details cost real time, and they are all in the code with comments:
+
+**Rounding.** Python's built-in `round` is banker's rounding, so it sends `.5` to the even neighbour. Kotlin's
+`Math.round` sends it up. The Python port needed its own `round_half_up`, or the two implementations disagree at
+every half-pixel boundary and the equivalence test fails for a reason neither algorithm caused.
+
+**A clamp that only one fixture can see.** The resample height is derived from the source aspect ratio. When the
+source is narrower than 64 pixels, the derived height exceeds the number of rows the photo actually has, and the
+bilinear pass cheerfully interpolates rows that do not exist. Clamped, and one fixture is 32x6 so that no future
+change to that line can pass silently. Every other fixture is at least 64 pixels wide, where the clamp is the
+identity. That is why the odd-sized fixture exists.
+
+**Precision across the border.** One side was doing channel arithmetic in 32-bit floats and the other in 64-bit.
+That disagreement showed up as 13,161 differing channel outcomes over the 893 rows of one real card, and it looked
+like a rendering bug. Canonical precision is now 64-bit on both sides, and the Python port is told never to touch
+`numpy.float32`.
+
+**Name ties.** Two vocabulary words can sit at the same distance from a measured colour. The earlier entry in the
+vocabulary wins, and a test asserts that order rather than leaving it to whatever a map iteration does on some
+machine later.
+
+## The part anyone can try in twenty seconds
+
+Nobody has to install an Android app, and nobody has to download a gigabyte of weights.
+
+```bash
+python tools/python/skycard.py photo.jpg -o card.png --print-json
+```
+
+It prints the eight bands, which band won, and the name, then writes a card. On a small image that is about a fifth
+of a second; on a 4032x3024 phone photo, 4.7 seconds. The band arithmetic is the same arithmetic as the Kotlin,
+line for line, and a test on both sides asserts against the same four PNG fixtures, so agreement is transitive and
+neither language can drift without a failure. 87 Kotlin core tests, 39 app tests, 13 Python tests.
+
+## The costs, stated before you discover them
+
+- The model file is 584,417,280 bytes and it is gated: you accept Gemma's terms in your own browser to download it.
+  I am not allowed to commit it, and GitHub's 100 MB per-file limit means I could not.
+- Total on-disk cost on the phone is about 1.02 GiB, not 557 MiB, because the engine writes a 508,539,776-byte
+  (485 MiB) XNNPack cache beside the file. Measured on the device, not estimated.
+- Model init measured 4,566 ms and peak RSS during a call 1,269 MB, both on the emulator; the timing a user actually
+  feels is in the failure-rate section above - the line lands 11-21 s after the record is filed - and every one of
+  those numbers is x86_64, not ARM. PENDING: the phone I actually use, read from `getprop` and `/proc/meminfo`
+  rather than from my own memory of the box. And the 10 s give-up marker belongs re-checked there, because on the
+  emulator it turned out to bound nothing: `withTimeoutOrNull` cannot interrupt a blocking native call, and a call
+  that ran 10.5 s still delivered its line past the marker.
+- The debug APK is 61,231,992 bytes (58.4 MiB) with zero model weights in it. That is the inference library's native
+  code, compiled for four ABIs.
+- Two variable fonts are bundled, 554 KB. Android cannot address a weight axis through the API people expect
+  (`fontFeatureSettings` is for OpenType features, and `wght` is not one), so the variation is pinned in a
+  `<font-family>` XML and loaded through `ResourcesCompat`, because `Resources.getFont` throws on a family file.
+- The manifest has no `INTERNET` permission. A test reads the *merged* manifest and asserts it, because a
+  dependency can smuggle one in and the claim would die quietly.
+
+## What this app does not do
+
+It does not measure air quality, pollution, UV, temperature, or your mood. It does not know if you left the
+balcony. It has no reminders, no streak, no share button, no cloud sync, and no account. It cannot tell you the sky
+looked better yesterday, because yesterday's photo was taken from a different angle of the same view and the app is
+not that dishonest.
+
+There is no real evening in this repo yet. Every card and every record I published came from an emulator pointed at
+its own synthetic scene, and the four PNGs under `fixtures/` are drawn, not photographed. The first sky this app
+measures is the one outside my window, and if I do not shoot it, the stack will show that too - the holes are the
+part of the design that survives my own laziness.
+
+One thing I did learn, and it is the reason the model ended up with the smallest job in the app: I spent days
+treating the 1/6 as a bug in my own harness. It reproduced across two independent runtimes, which is what the spec
+now says plainly, that this is a model limit and not a quantisation artifact. At some point I stopped debugging and
+accepted that the model is genuinely that unreliable at picking. Knowing that is worth more than knowing why my
+code was right, and the only way I found it was to measure before I built.
