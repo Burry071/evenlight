@@ -14,3 +14,11 @@ local.properties
 .superpowers/
 captures/
 *.log
+
+# The model weights. GitHub's hard per-file limit is 100 MB and the file is 584,417,280 bytes, so this
+# is not a preference: the weights cannot be committed at all. models/GET_MODEL.md says how to fetch one.
+*.litertlm
+
+# Build caches the tooling writes into the repo root, none of them source.
+.kotlin/
+.pytest_cache/
