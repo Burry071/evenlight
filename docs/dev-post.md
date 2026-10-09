@@ -22,7 +22,7 @@ Eight horizontal colour bands, read off the photo. A name, chosen by matching th
 fixed vocabulary of 35 words. A date, and the sun's altitude in degrees at the moment the shutter was pressed. One
 line of text.
 
-Then, in the app rather than on the card, every evening you have recorded, newest first, with a visible gap where an
+Then, in the app rather than on the card, every evening you have recorded, oldest first, with a visible gap where an
 evening is missing. A streak counter would have hidden the days I did not shoot, and the holes are the honest part
 of the data.
 
@@ -176,9 +176,12 @@ change to that line can pass silently. Every other fixture is at least 64 pixels
 identity. That is why the odd-sized fixture exists.
 
 **Precision across the border.** One side was doing channel arithmetic in 32-bit floats and the other in 64-bit.
-That disagreement showed up as 13,161 differing outcomes, counted by brute force over every field row from 0 to 892,
-every band pair and every channel pair from (0,0) to (255,255). It is an enumeration of the blend formula, not a
-rendered card, and I mention that because it looked like a rendering bug. Canonical precision is now 64-bit on both sides, and the Python port is told never to touch
+That disagreement showed up as 13,161 differing `(row, band-pair, channel)` outcomes when the blend formula was
+brute-forced instead of rendered - the kind of thing that looks like a rendering bug until you notice the two sides
+round exact `.5` ties opposite ways (row 57, the pair 0 and 47: one language says 0, the other says 1). That sweep
+was a throwaway probe and its script is not in this repository, so this is the one number in this post you cannot
+recompute. What you can check is the fix: `fieldBlend` returns a `Double`, and no cast quantises it on the way to a
+pixel. Canonical precision is now 64-bit on both sides, and the Python port is told never to touch
 `numpy.float32`.
 
 **Name ties.** Two vocabulary words can sit at the same distance from a measured colour. The earlier entry in the
@@ -215,8 +218,9 @@ against the same four PNG fixtures, so agreement is transitive and neither langu
   10 s give-up marker belongs re-checked there too, because on the emulator it turned out to bound nothing:
   `withTimeoutOrNull` cannot interrupt a blocking native call, and a call that ran 10.5 s still delivered its line
   past the marker.
-- The debug APK is 61,231,992 bytes (58.4 MiB) with zero model weights in it. That is the inference library's native
-  code, compiled for four ABIs.
+- The debug APK is 61,350,388 bytes (58.5 MiB) with zero model weights in it. That is the inference library's native
+  code, compiled for four ABIs. Two builds of the same tree half an hour apart came out 62 bytes apart, so read the
+  figure as "about 58.5 MiB".
 - Two variable fonts are bundled, 554 KB. Android cannot address a weight axis through the API people expect
   (`fontFeatureSettings` is for OpenType features, and `wght` is not one), so the variation is pinned in a
   `<font-family>` XML and loaded through `ResourcesCompat`, because `Resources.getFont` throws on a family file.

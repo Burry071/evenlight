@@ -30,5 +30,5 @@ What this license covers, and what it deliberately does not.
   584,417,280 bytes and GitHub's hard per-file limit is 100 MB. `models/GET_MODEL.md` says how to
   obtain them, and they come under the Gemma Terms of Use, which you accept yourself.
 - It does NOT cover the two bundled fonts. Fraunces and Instrument Sans are SIL Open Font License
-  1.1 works and their license texts are kept, untouched, in `LICENSES/`. The `.gitignore` pattern
-  above and this file are different things with similar names; `LICENSES/` is tracked source.
+  1.1 works and their license texts are kept, untouched, in `LICENSES/`. That directory and this file
+  are different things with similar names; `LICENSES/` is tracked source.

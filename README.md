@@ -37,7 +37,7 @@ index under it, the latest card, and a shutter that is never disabled at any hou
 
 ![Stack](docs/images/screen-stack.png)
 
-**Stack.** Every evening, newest first, holes included. `ui/StackScreen.kt`, `ui/StackDays.kt`.
+**Stack.** Every evening, oldest first, holes included. `ui/StackScreen.kt`, `ui/StackDays.kt`.
 
 ![Setup](docs/images/screen-setup.png)
 
@@ -120,8 +120,9 @@ or ink.
 ## The model, and the measurement that demoted it
 
 The probes ran before any product code: five designs, a 1B open-weight model on CPU, and the same eighteen calls on
-the last two. The first four rows of the table ran on a desktop runtime; the fifth is the identical eighteen calls
-against `Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm` on the emulator's CPU. The table is reproduced from
+the last two. Only the fifth row was run on the device: the spec labels it "same test, on-device `.litertlm`", which
+is its way of saying the four above it were not. Those four ran on a laptop runtime, and no log of that run is in
+this repository - the table is reproduced from
 `docs/superpowers/specs/2026-10-07-evenlight-design.md` section 7, which is where it was recorded at the time.
 
 | what I asked for | what came back |
@@ -225,8 +226,9 @@ All timings in this section are from an x86_64 API-35 emulator (1080x2340 @ 440 
 **The target device is unmeasured.** I am not going to quote a phone I did not read, and I am not going to repeat
 the number I remembered about it instead.
 
-- The debug APK is 61,231,992 bytes (58.4 MiB) and contains zero model weights. That is the LiteRT-LM library's
-  native code, compiled for four ABIs.
+- The debug APK is 61,350,388 bytes (58.5 MiB) and contains zero model weights. That is the LiteRT-LM library's
+  native code, compiled for four ABIs. Read it as "about 58.5 MiB": two builds of this same tree, half an hour
+  apart with no source change between them, came out 62 bytes apart.
 - The model file is 584,417,280 bytes and it is not in this repository: GitHub's hard per-file limit is 100 MB, so
   it cannot be. `models/GET_MODEL.md` has the URL, the filename, the byte size, the sha256, and the one thing you
   have to do in a browser yourself.
@@ -234,7 +236,7 @@ the number I remembered about it instead.
   508,539,776-byte XNNPack cache beside the weights. Measured on the emulator.
 - Model init 4,566 ms, peak RSS during a call 1,269 MB, 1,080 / 1,247 / 3,502 ms per line in isolation
   (min / median / max), and roughly 132 MB of free RAM with the model resident and the low-memory killer active. All
-  emulator numbers. The isolated call is not the call a user waits on: inside the app the same rewrite lands 11-21 s
+  emulator numbers. The isolated call is not the call a user waits on: inside the app the same rewrite lands 11.3-21.4 s
   after the record is filed, and I have not split that difference up, so I am not going to explain it here.
 - The app is complete without the model. No weights, no download, no failure: the card uses the template line and
   the record says `wording_source: "none"`.
@@ -277,16 +279,16 @@ wording, wordingSource, wordingRejected, attempt, clockSuspect
 ```
 
 `wordingSource` is one of exactly four values - `"model"`, `"template"`, `"no-answer"`, `"none"` - and the two
-"nothing came back" values exist because conflating them was a real bug: seven evenings were filed as `"none"`
-("no model on this device") while the weights were present and warm, which made any failure rate built on that
-field uncomputable, and wrong in the flattering direction. Files live under
+"nothing came back" values exist because conflating them was a real bug: seven shots on one evening were filed as
+`"none"` ("no model on this device") while the weights were present and warm, which made any failure rate built on
+that field uncomputable, and wrong in the flattering direction. Files live under
 `files/evenlight/{records,cards,raw}/` per `app/src/main/java/com/burry071/evenlight/data/Store.kt`, one record per
 attempt, so a second shot on the same evening does not overwrite the first.
 
 The holes, stated exactly:
 
 - **A rejected line is counted and then thrown away.** The record stores `wording_rejected: true` and the template
-  line that replaced it, never the model's text or which rule rejected it. Two of the six allowlist answers are
+  line that replaced it, never the model's text or which rule rejected it. Three of the six allowlist answers are
   therefore unexplainable from the published data. Fixing it needs a new field on `EveningRecord`, and `:core` is
   frozen for this entry.
 - **`clock_suspect` catches less than its name suggests.** It compares two reads of one wall clock around a shutter
@@ -299,7 +301,10 @@ The holes, stated exactly:
 - **Low light is recorded, not refused.** `mean_luminance` goes into every record and nothing is dropped for being
   dark, so a dim sky produces a confident card.
 - **Nothing in a record says where you were.** No photo, no coordinates, no place name: those live in
-  `settings.json` on the device, which is not committed and is not part of the sample.
+  `settings.json` on the device, which is not committed and is not part of the sample. That is a claim about
+  records, not about this repository: the design spec and the plan both name the coordinate pair the sunset
+  constants were computed against, and `SunWindowTest.kt` and `StoreTest.kt` use that pair as fixture data. The
+  screenshots do not carry it - the Setup fields show the example from their own hint.
 - **The visible gaps are not visible in any image here.** The stack screenshot says `2 evenings · 0 holes`, because
   the two synthetic evenings are on consecutive days. The hole logic is `ui/StackDays.kt` and it is covered by
   `StackDaysTest`, not by a picture.
@@ -309,12 +314,14 @@ The holes, stated exactly:
 ## Building it
 
 You need JDK 17 or newer, an Android SDK with API 35, and Gradle 8.8. `gradle/wrapper` is not committed in this
-repository - a known gap I did not get to - so there is no `./gradlew`; use your own Gradle.
+repository - a known gap I did not get to - so there is no `./gradlew`; use your own Gradle. The app installs on
+Android 8.1 and up (`minSdk = 27`).
 
 ```bash
 export ANDROID_HOME=/path/to/Android/Sdk     # or create local.properties with sdk.dir=...
 gradle :app:assembleDebug                    # first run needs network for dependencies
 gradle :core:test :app:testDebugUnitTest     # 87 + 39 tests
+gradle :app:installDebug                     # or: adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
 `local.properties` is gitignored on purpose, because it holds a machine-specific SDK path. Both test tasks and the
