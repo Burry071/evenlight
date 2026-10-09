@@ -209,9 +209,14 @@ neither language can drift without a failure. 87 Kotlin core tests, 39 app tests
 ## What this app does not do
 
 It does not measure air quality, pollution, UV, temperature, or your mood. It does not know if you left the
-balcony. It has no reminders, no streak, no share button, no cloud sync, and no account. It cannot tell you the sky
+balcony. It has no reminders, no streak, no cloud sync, and no account. It cannot tell you the sky
 looked better yesterday, because yesterday's photo was taken from a different angle of the same view and the app is
 not that dishonest.
+
+It does have a `share` link, and I would rather overstate that than let a reader find it later: it is an
+`ACTION_SEND` of the card PNG through a `FileProvider`, with a per-URI read-only grant, and the runtime permission
+set is still exactly `{CAMERA}`. Nothing leaves the phone by itself, which the manifest test is the guarantee of -
+not my intention.
 
 There is no real evening in this repo yet. Every card and every record I published came from an emulator pointed at
 its own synthetic scene, and the four PNGs under `fixtures/` are drawn, not photographed. The first sky this app
