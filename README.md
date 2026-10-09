@@ -7,10 +7,12 @@ evening by matching the most colourful band against a fixed list of 35 words, an
 shoot stacks day over day, with a visible gap for the evenings you did not shoot. An on-device language model may
 write one line of prose about the colour that was already measured. It is not allowed to choose anything.
 
-That last sentence is the whole project. I ran a 1B model on real data before writing any app code, found it was
-bad at picking and fine at phrasing, and moved every decision in the app out of its reach. The measurement is in
+That last sentence is the whole project. I ran a 1B model on the inputs the app would actually hand it, before
+writing any app code, found it was bad at picking and fine at phrasing, and moved every decision in the app out of
+its reach. The measurement is in
 [the model section](#the-model-and-the-measurement-that-demoted-it) below, and every number in this file traces to
-something in the repository. `docs/dev-post.md` is the long version of the same story.
+something in the repository - or says out loud that it does not. `docs/dev-post.md` is the long version of the same
+story.
 
 ## What is on screen
 
@@ -20,8 +22,9 @@ Five screens, and the app is `:app` plus a pure-Kotlin `:core`. The file paths b
 
 ![Tonight](docs/images/screen-tonight.png)
 
-**Tonight.** One number: minutes until the window opens, with sunset and the evening index under it, the latest
-card, and a shutter that is never disabled at any hour. `ui/TonightScreen.kt`, `core/SunWindow.kt`.
+**Tonight.** One number: minutes until sunset at the place you typed, with the sunset time and tonight's evening
+index under it, the latest card, and a shutter that is never disabled at any hour. `ui/TonightScreen.kt`,
+`core/SunWindow.kt`.
 
 ![Shoot](docs/images/screen-shoot.png)
 
@@ -55,9 +58,9 @@ python tools/python/skycard.py photo.jpg -o card.png --print-json
 ```
 
 It prints the eight bands, which band won, and the name, then writes a 1080x1440 card. Needs Python with Pillow
-and nothing else. Timed as whole processes on my box: 0.27 s for a 128x96 fixture, 4.7 s for a 4032x3024 JPEG at
-2 MB. That second file is a synthetic gradient with noise in it, not a photograph, so treat 4.7 s as the shape of
-the cost rather than its exact figure.
+and nothing else. Timed as whole processes on my box, two runs each: 0.27 s and 0.33 s for a 128x96 fixture, 4.7 s
+and 6.1 s for a 4032x3024 JPEG at 2 MB. That second file is a synthetic gradient with noise in it, not a photograph,
+and the gap between its two runs is why both numbers are there instead of one.
 
 The two implementations are tested against the same four PNG goldens in `fixtures/`, pinned by
 `core/src/test/kotlin/com/burry071/evenlight/core/FixtureEquivalenceTest.kt` and mirrored by
@@ -115,7 +118,8 @@ or ink.
 ## The model, and the measurement that demoted it
 
 The probes ran before any product code: five designs, a 1B open-weight model on CPU, and the same eighteen calls on
-the last two, all of them against `Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm`. The table is reproduced from
+the last two. The first four rows of the table ran on a desktop runtime; the fifth is the identical eighteen calls
+against `Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm` on the emulator's CPU. The table is reproduced from
 `docs/superpowers/specs/2026-10-07-evenlight-design.md` section 7, which is where it was recorded at the time.
 
 | what I asked for | what came back |
@@ -126,8 +130,8 @@ the last two, all of them against `Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.lit
 | "choose one of these three" | **on-list 17/18**, **stable across reordering 1/6** |
 | the identical 18 calls on-device, CPU | **on-list 18/18, single-line 18/18, stable 1/6** |
 
-18 out of 18 obeyed the shape they were asked for. One out of six kept the same answer when I shuffled the order of
-the three choices, and that 1/6 reproduced on a second independent runtime, so it is a model limit and not a
+On-device, 18 out of 18 obeyed the shape they were asked for. One out of six kept the same answer when I shuffled the
+order of the three choices, and that 1/6 reproduced on a second independent runtime, so it is a model limit and not a
 quantisation artifact or a bug in my harness. That is the finding that decided the architecture: the matcher owns
 every choice, and the model writes one line of 4-8 words from a name it was handed.
 
