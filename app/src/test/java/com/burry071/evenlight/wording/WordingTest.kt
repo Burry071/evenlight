@@ -5,6 +5,7 @@ import com.burry071.evenlight.core.Verdict
 import com.burry071.evenlight.core.Verifier
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -40,13 +41,16 @@ class WordingTest {
     }
 
     @Test fun systemForbidsTheSameThingsTheVerifierChecks() {
-        // Not redundancy for its own sake: the Verifier rejects digits, markup, uppercase and multiline, and every
-        // one of those rejections is a wasted 1.2 s. If one rule drifts out of SYSTEM, rejections silently rise.
+        // Not redundancy for its own sake: every rejection is a wasted 1.2 s, so SYSTEM must name the same set
+        // of rules the gate enforces. If one rule drifts out of SYSTEM, rejections silently rise.
         val s = Wording.SYSTEM.lowercase()
         assertTrue(s.contains("do not use any digit"))
-        assertTrue(s.contains("hash"))
         assertTrue(s.contains("newline"))
         assertTrue(s.contains("one lowercase line"))
+        // The verifier's rule is now an allowlist, so the guard asks SYSTEM for the allowlist clause rather
+        // than for examples of banned characters: naming `#` and brackets was exactly what missed `**ash**`.
+        assertTrue(s.contains("use only lowercase letters"))
+        assertTrue(s.contains("the marks . , - '"))
     }
 
     private fun filed(
@@ -69,7 +73,7 @@ class WordingTest {
     )
 
     @Test fun applyWordingAdoptsAConformingLineAsModel() {
-        val out = applyWording(filed(), "brassy light fades over the rooftops", "brassy")
+        val out = applyWording(filed(), "brassy light fades over the rooftops", "brassy", consulted = true)
         assertEquals("brassy light fades over the rooftops", out.wording)
         assertEquals("model", out.wordingSource)
         assertFalse(out.wordingRejected)
@@ -78,27 +82,56 @@ class WordingTest {
     @Test fun applyWordingCountsARejectedLineAgainstTheTemplate() {
         // The candidate fails the verifier (a digit), so the line stays the template - but the attempt must be
         // counted, or the README's rejection rate divides by a total that only accepted answers made into it.
-        val out = applyWording(filed(), "48 shades of brassy at dusk", "brassy")
+        val out = applyWording(filed(), "48 shades of brassy at dusk", "brassy", consulted = true)
         assertEquals(Wording.template("brassy"), out.wording)
         assertEquals("template", out.wordingSource)
         assertTrue("a rejection must be counted", out.wordingRejected)
     }
 
-    @Test fun applyWordingResetsToNoneWhenTheModelNeverAnswered() {
+    @Test fun applyWordingSaysNoneWhenTheModelWasNeverConsulted() {
         // The input deliberately carries stale provenance: "never consulted" must mean "none" whatever the record
         // claimed before, and the line must be the template again, not the earlier model's sentence.
-        val out = applyWording(filed("an old model line", "model", true), null, "brassy")
+        val out = applyWording(filed("an old model line", "model", true), null, "brassy", consulted = false)
         assertEquals(Wording.template("brassy"), out.wording)
         assertEquals("none", out.wordingSource)
         assertFalse(out.wordingRejected)
     }
 
+    @Test fun applyWordingSaysNoAnswerWhenTheConsultedEngineFellSilent() {
+        // Measured: the device filed seven evenings as "none" while the weights were present and the engine warm,
+        // because a 10 s timeout inside line() looked exactly like "no model installed". That conflated pair made
+        // the README's failure rate uncomputable; "no-answer" is the consulted-and-silent half of it.
+        // wordingRejected stays false - the verifier never saw a line, so nothing was rejected.
+        val out = applyWording(filed("an old model line", "model", false), null, "brassy", consulted = true)
+        assertEquals(Wording.template("brassy"), out.wording)
+        assertEquals("no-answer", out.wordingSource)
+        assertFalse(out.wordingRejected)
+    }
+
+    @Test fun theTwoNullsLandOnDifferentProvenances() {
+        // The guard against collapsing `consulted` into one branch: same record, same null candidate, only the
+        // flag differs, and the provenance must differ with it. Without this the seven-evenings bug is one
+        // refactor away from returning.
+        val consulted = applyWording(filed(), null, "brassy", consulted = true)
+        val never = applyWording(filed(), null, "brassy", consulted = false)
+        assertEquals("no-answer", consulted.wordingSource)
+        assertEquals("none", never.wordingSource)
+        assertNotEquals(consulted.wordingSource, never.wordingSource)
+    }
+
     @Test fun applyWordingRewritesNothingButTheWordingAndItsProvenance() {
         // "The bands and the name never change" (brief Step 5), stated as the mutation it guards: a future refactor
         // of this mapping that also touched a measured field would change what the card claims was observed.
-        for (candidate in listOf("brassy light fades over the rooftops", "48 shades of brassy at dusk", null)) {
+        // All four provenances, including the consulted flag that distinguishes the two nulls.
+        val cases = listOf(
+            "brassy light fades over the rooftops" to true,
+            "48 shades of brassy at dusk" to true,
+            null to true,
+            null to false,
+        )
+        for ((candidate, consulted) in cases) {
             val before = filed()
-            val after = applyWording(before, candidate, "brassy")
+            val after = applyWording(before, candidate, "brassy", consulted)
             assertEquals(before.date, after.date)
             assertEquals(before.shutter, after.shutter)
             assertEquals("the eight bands survive: " + candidate, before.bandsHex, after.bandsHex)

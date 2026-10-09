@@ -86,6 +86,11 @@ class MainActivity : ComponentActivity() {
                 canReadRaw = { record -> store.rawFile(record.shutter, record.attempt).canRead() },
                 onSettingsSaved = { s ->
                     settings = s
+                    // forDevice builds a fresh EngineHolder with the save; the old holder's initialised engine is
+                    // 1.2 GB of native memory that nothing references once the controller is dropped. Close the
+                    // controller being replaced before dropping it - close() defers to the holder's in-flight
+                    // guard, so saving settings mid-shot leaks the handle instead of racing the native call.
+                    controller?.close()
                     controller = EvenlightController.forDevice(this, store, s, frame)
                     reload()
                 },
@@ -105,6 +110,19 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         reload()
+    }
+
+    /**
+     * The activity owns the controller it built in onCreate, and the controller owns the only reference to a 1.2 GB
+     * native engine. onCreate rebuilds it, onSettingsSaved replaces it, and this is the third exit: without it the
+     * engine outlives the window that loaded it. close() cannot corrupt a shot in flight - the holder's guard skips
+     * cleanup rather than closing an engine inside a native call - it just leaks the handle in that case, which is
+     * the trade the holder documents.
+     */
+    override fun onDestroy() {
+        super.onDestroy()
+        controller?.close()
+        controller = null
     }
 
     /** Every read this screen does, in one place, so a shot that files a card cannot leave the stack on old data. */

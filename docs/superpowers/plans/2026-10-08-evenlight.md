@@ -1438,7 +1438,7 @@ data class EveningRecord(
     val sunAltitudeDeg: Int,
     val meanLuminance: Double,
     val wording: String,
-    val wordingSource: String,      // "model" | "template" | "none"
+    val wordingSource: String,      // "model" | "template" | "none" | "no-answer"
     val wordingRejected: Boolean,
     val attempt: Int,
     val clockSuspect: Boolean
@@ -2512,7 +2512,7 @@ class EvenlightController(
             sunAltitudeDeg = altitude,
             meanLuminance = bands.meanLuminance,
             wording = Wording.template(match.name),
-            wordingSource = "none",     // the engine arrives in T11; "none" means it was never consulted
+            wordingSource = "none",     // the engine arrives in T11; "none" is the never-consulted value of the four ("model" | "template" | "none" | "no-answer") - consulted-but-silent is "no-answer"
             wordingRejected = false,
             attempt = attempt,
             clockSuspect = suspect

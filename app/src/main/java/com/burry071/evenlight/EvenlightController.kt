@@ -99,7 +99,7 @@ class EvenlightController(
                 sunAltitudeDeg = altitude,
                 meanLuminance = bands.meanLuminance,
                 wording = Wording.template(match.name),
-                wordingSource = "none",     // written unconsulted; the upgrade below rewrites it if the model answers
+                wordingSource = "none",     // written unconsulted; the upgrade below rewrites it once the engine is consulted
                 wordingRejected = false,
                 attempt = attempt,
                 clockSuspect = suspect
@@ -114,18 +114,31 @@ class EvenlightController(
             // template line the card was already filed with. Every throw in this block lands back on that record:
             // the rewrite is best-effort, and a failed best-effort is not a failed shot.
             val upgraded = runCatching {
-                val candidate = if (engine.ensure()) engine.line(match.name, record.bandsHex, altitude) else null
-                val finalRecord = applyWording(record, candidate, match.name)
+                // `consulted` is ensure()'s actual return, not an assumption: "no model installed" and
+                // "asked and got nothing back in 10 s" are different facts, and the device run proved that
+                // recording both as "none" makes the README's failure rate uncomputable (applyWording).
+                val consulted = engine.ensure()
+                val candidate = if (consulted) engine.line(match.name, record.bandsHex, altitude) else null
+                val finalRecord = applyWording(record, candidate, match.name, consulted)
                 if (finalRecord != record) {
-                    // The model answered at all - accepted or rejected, both are counted; a rejection that never
-                    // reached the JSON is a rejection the README's ratio cannot see. Same (date, attempt) path, so
-                    // this overwrites the file the record write above created and attemptsFor never sees two.
-                    store.writeRecord(finalRecord, attempt)
                     if (finalRecord.wording != record.wording) {
+                        // Render into memory, then card, then record. `renderer.render`/`pngBytes` is the only step
+                        // in this block that can throw from computation - OOM on a 3 GB device is not hypothetical,
+                        // it is the memory regime the model itself creates - and doing it first means a throw
+                        // leaves NEITHER write done: the evening keeps its template line and its template card,
+                        // and the two agree. Rewriting the record before the card could instead leave a JSON
+                        // claiming wording_source: model beside a PNG still showing the template. The remaining
+                        // window - card written, record write lost - disagrees in the direction that understates
+                        // the model, which is the side worth erring on.
                         // headerFor prints record.wording onto the card image, so a card and a record that
                         // disagree about the line is a visible bug: re-render, but only when the text changed.
-                        store.writeCard(date, pngBytes(renderer.render(bands.ordered, headerFor(finalRecord, match))))
+                        val png = pngBytes(renderer.render(bands.ordered, headerFor(finalRecord, match)))
+                        store.writeCard(date, png)
                     }
+                    // Same (date, attempt) path, so this overwrites the file the record write above created and
+                    // attemptsFor never sees two. A provenance-only change (no-answer, rejected) reaches here
+                    // without a re-render: the card already shows the template line the final record carries.
+                    store.writeRecord(finalRecord, attempt)
                 }
                 finalRecord
             }.getOrElse { if (it is CancellationException) throw it else record }
@@ -137,6 +150,15 @@ class EvenlightController(
         // coroutine that swallows its own cancellation stops being obvious once it is load-bearing.
         outcome.exceptionOrNull()?.let { if (it is CancellationException) throw it }
         return outcome
+    }
+
+    /**
+     * Release the native engine when this controller is retired. It defers to EngineHolder's in-flight guard:
+     * called while a shot is inside a native call it skips the close (a documented leak) rather than risk a
+     * use-after-free, so this is always safe to call and not always effective.
+     */
+    fun close() {
+        engine.close()
     }
 
     private fun pngBytes(bmp: Bitmap): ByteArray {

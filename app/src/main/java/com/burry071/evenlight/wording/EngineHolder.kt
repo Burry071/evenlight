@@ -9,6 +9,7 @@ import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.SamplerConfig
 import java.io.File
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -36,6 +37,12 @@ class EngineHolder(private val context: Context) {
      */
     private var timedOut = false
 
+    /**
+     * Set for the duration of any blocking native call - initialize, sendMessage, close - so `close()` below can
+     * refuse to yank an engine out from under a call still running inside it.
+     */
+    @Volatile private var inFlight = false
+
     /** Measured on an x86_64 API-35 AVD: init 4,566 ms, peak RSS 1,269 MB, ~1.2 s per line. */
     val modelFile: File
         get() = File(context.filesDir, "models/Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm")
@@ -51,12 +58,29 @@ class EngineHolder(private val context: Context) {
         if (!modelFile.exists()) return false
         val e = Engine(EngineConfig(modelPath = modelFile.absolutePath, backend = Backend.CPU()))
         // null = timed out, false = threw, true = initialised. The distinction drives which cleanup is safe.
+        inFlight = true
         val outcome: Boolean? = try {
             withContext(Dispatchers.Default) {
-                try { withTimeoutOrNull(30_000) { e.initialize(); true } } catch (t: Throwable) { false }
+                try { withTimeoutOrNull(30_000) { e.initialize(); true } }
+                catch (t: Throwable) {
+                    // Cancellation is not an init failure: rethrow it out of the worker block so it travels up
+                    // through withContext to the caller, matching the contract the controller already keeps by
+                    // rethrowing at EvenlightController's two cancellation sites. Anything else stays swallowed -
+                    // every genuine failure route lands on the template.
+                    if (t is CancellationException) throw t
+                    false
+                }
             }
         } catch (t: Throwable) {
-            false // the caller's scope was cancelled before/while the block ran; treat as a failed init
+            if (t is CancellationException) {
+                // `e` gets the same treatment as the timed-out engine below: left alone. A cancelled coroutine
+                // cannot prove the blocking native initialize() has unwound, and close() against it is the
+                // use-after-free the timedOut comment already prices. One leaked handle is the cheaper side.
+                throw t
+            }
+            false
+        } finally {
+            inFlight = false
         }
         when (outcome) {
             true -> { engine = e; ready = true }
@@ -66,9 +90,14 @@ class EngineHolder(private val context: Context) {
         return outcome == true
     }
 
-    /** Null on any failure. The caller falls back to Wording.template; nothing blocks on this. */
+    /**
+     * Null when the engine gave no answer - threw or timed out - which the caller maps through `consulted` to
+     * "no-answer" or "none". Cancellation is a third thing and is not swallowed here: it propagates, because a
+     * cancelled caller is not a model that failed to answer.
+     */
     suspend fun line(name: String, bands: List<String>, altitudeDeg: Int): String? {
         val e = engine ?: return null
+        inFlight = true
         return try {
             withContext(Dispatchers.Default) {
                 withTimeoutOrNull(10_000) {
@@ -89,9 +118,32 @@ class EngineHolder(private val context: Context) {
                 }
             }
         } catch (t: Throwable) {
+            if (t is CancellationException) throw t
             null
+        } finally {
+            inFlight = false
         }
     }
 
-    fun close() { runCatching { engine?.close() }; engine = null; ready = false }
+    /**
+     * Release the engine, but only while it is provably not inside a native call: the guard is claimed here and
+     * held by initialize/sendMessage for their whole duration, and a close it cannot claim is skipped - a
+     * documented leak, the same priced trade the `timedOut` comment above already makes for a timed-out init,
+     * because close() against a live native call is a use-after-free at shutter speed. The check-then-set on a
+     * volatile flag is not atomic; it rests on every caller here (the shoot path, and both MainActivity close
+     * sites) dispatching from the main thread, so a close interleaves with a shot only at suspension points,
+     * each of which the guard already spans. Its strength as a guard is unproven: no JVM test constructs an
+     * EngineHolder (R18), so this is reasoned code, not covered code.
+     */
+    fun close() {
+        if (inFlight) return
+        inFlight = true
+        try {
+            runCatching { engine?.close() }
+            engine = null
+            ready = false
+        } finally {
+            inFlight = false
+        }
+    }
 }
