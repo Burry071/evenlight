@@ -3002,7 +3002,10 @@ def narrow():
 
 for name, img in (("sky_ramp", ramp()), ("sky_blocks", blocks()), ("sky_wide", wide()),
                   ("sky_narrow", narrow())):
-    img.save(os.path.join(HERE, "..", "..", "fixtures", name + ".png"))
+    # This file lives *in* `fixtures/`, so HERE is already the target directory. The two `..` steps this
+    # step used to carry wrote the PNGs to `<repo>/../fixtures`, outside the repository, where no reviewer
+    # would ever commit them. Ledger R14.
+    img.save(os.path.join(HERE, name + ".png"))
 ```
 
 - [ ] **Step 2: Pin the goldens from the Kotlin side**, so agreement is transitive and no cross-process call is needed.
