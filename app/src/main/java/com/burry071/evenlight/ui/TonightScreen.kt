@@ -89,11 +89,15 @@ fun TonightScreen(
 
     // "evening 4" is tonight's ordinal in the record, so it counts distinct evenings strictly before today.
     // ISO dates sort lexicographically, which is why a string comparison here is a date comparison.
+    // Remembered on `records` rather than recomputed: the 30 s tick below recomposes this whole body, and a
+    // derived value that does not depend on `tick` must not be re-derived by something that does.
     val isoToday = today.toString()
-    val eveningNumber = records.map { it.date }.distinct().count { it < isoToday } + 1
+    val eveningNumber = remember(records, isoToday) {
+        records.map { it.date }.distinct().count { it < isoToday } + 1
+    }
 
-    val latest = records.lastOrNull { it.date in held }
-    val bands = latest?.let { bandColors(it.bandsHex) }
+    val latest = remember(records, held) { records.lastOrNull { it.date in held } }
+    val bands = remember(latest) { latest?.let { bandColors(it.bandsHex) } }
     val largeFont = LocalDensity.current.fontScale > 1.15f
 
     Column(

@@ -2,12 +2,16 @@ package com.burry071.evenlight.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import com.burry071.evenlight.EvenlightController
 import com.burry071.evenlight.core.EveningRecord
 import com.burry071.evenlight.data.Settings
@@ -120,7 +124,9 @@ fun EvenlightContent(
     onPreviewReady: (PreviewView) -> Unit,
     onOpenRaw: (EveningRecord) -> Unit,
     onShareCard: (String) -> Unit,
+    canReadRaw: (EveningRecord) -> Boolean,
     onSettingsSaved: (Settings) -> Unit,
+    reloadData: () -> Unit,
     reduceMotion: Boolean
 ) {
     nav.BackHandler()
@@ -170,38 +176,59 @@ fun EvenlightContent(
                 onEnsureCamera = onEnsureCamera,
                 onPreviewReady = onPreviewReady,
                 reduceMotion = reduceMotion,
-                onFiled = { record -> nav.replaceTop(Screen.Card(record.date)) }
+                onFiled = { record ->
+                    // `records`/`held` are the activity's snapshot of the filesystem, and this is the only moment in
+                    // the session the app itself makes that snapshot wrong. Without the reload tonight's row keeps
+                    // rendering through the hole branch as "no photo" next to a card that exists - the gaps rule
+                    // honest in reverse - and it stays wrong until the process restarts.
+                    reloadData()
+                    nav.replaceTop(Screen.Card(record.date))
+                }
             )
 
-            is Screen.Stack -> {
-                val open = nav.under as? Screen.Card
-                StackScreen(
-                    records = records,
-                    held = held,
-                    onOpen = { date -> nav.push(Screen.Card(date)) },
-                    detail = if (open != null) {
-                        {
-                            CardPane(
-                                store = store,
-                                records = records,
-                                date = open.date,
-                                onOpenRaw = onOpenRaw,
-                                onShareCard = onShareCard
-                            )
-                        }
+            is Screen.Stack -> StackScreen(
+                records = records,
+                held = held,
+                onOpen = { date -> nav.push(Screen.Card(date)) },
+                detail = null
+            )
+
+            is Screen.Card -> {
+                val overStack = nav.under is Screen.Stack
+                // The pane is chosen here, not inside StackScreen, because at compact width a card is a full screen
+                // and at expanded width it is the right 62 % of the stack it was opened from - and only this branch
+                // knows the card is on the stack. The earlier shape of this file asked `nav.under` for a Card while
+                // `current` was the Stack, which is the one arrangement the navigation can never produce: opening a
+                // card pushes it *over* the stack, so the 38/62 split was dead code and every foldable opened a
+                // full-screen card instead (Step 9).
+                BoxWithConstraints(Modifier.fillMaxSize()) {
+                    if (overStack && maxWidth >= 840.dp) {
+                        StackScreen(
+                            records = records,
+                            held = held,
+                            onOpen = { date -> nav.replaceTop(Screen.Card(date)) },
+                            detail = {
+                                CardPane(
+                                    store = store,
+                                    records = records,
+                                    date = screen.date,
+                                    canReadRaw = canReadRaw,
+                                    onOpenRaw = onOpenRaw,
+                                    onShareCard = onShareCard
+                                )
+                            }
+                        )
                     } else {
-                        null
+                        val record = records.lastOrNull { it.date == screen.date }
+                        CardScreen(
+                            cardFile = store.cardFile(screen.date),
+                            hasRawPhoto = record != null && canReadRaw(record),
+                            onRawPhoto = { record?.let(onOpenRaw) },
+                            onShare = { onShareCard(screen.date) }
+                        )
                     }
-                )
+                }
             }
-
-            is Screen.Card -> CardScreen(
-                cardFile = store.cardFile(screen.date),
-                onRawPhoto = {
-                    records.lastOrNull { it.date == screen.date }?.let(onOpenRaw)
-                },
-                onShare = { onShareCard(screen.date) }
-            )
         }
     }
 }
@@ -212,12 +239,17 @@ private fun CardPane(
     store: Store,
     records: List<EveningRecord>,
     date: String,
+    canReadRaw: (EveningRecord) -> Boolean,
     onOpenRaw: (EveningRecord) -> Unit,
     onShareCard: (String) -> Unit
 ) {
+    val record = records.lastOrNull { it.date == date }
     CardScreen(
         cardFile = store.cardFile(date),
-        onRawPhoto = { records.lastOrNull { it.date == date }?.let(onOpenRaw) },
-        onShare = { onShareCard(date) }
+        hasRawPhoto = record?.let(canReadRaw) ?: false,
+        onRawPhoto = { record?.let(onOpenRaw) },
+        onShare = { onShareCard(date) },
+        // The pane's box already caps at 420 dp; saying it here too keeps one number rather than two mechanisms.
+        cardMaxWidth = 420.dp
     )
 }

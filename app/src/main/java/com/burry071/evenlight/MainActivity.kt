@@ -81,14 +81,28 @@ class MainActivity : ComponentActivity() {
                 onPreviewReady = { view -> preview = view; bindCamera() },
                 onOpenRaw = { record -> openRaw(record) },
                 onShareCard = { date -> shareCard(date) },
+                // The same predicate `openRaw` guards with, so the action is hidden exactly when pressing it would
+                // have done nothing. One stat call per visible card, not a per-frame read.
+                canReadRaw = { record -> store.rawFile(record.shutter, record.attempt).canRead() },
                 onSettingsSaved = { s ->
                     settings = s
                     controller = EvenlightController.forDevice(this, store, s, frame)
                     reload()
                 },
+                reloadData = { reload() },
                 reduceMotion = reduceMotion()
             )
         }
+        reload()
+    }
+
+    /**
+     * The filesystem is the truth and this snapshot is a copy of it, so the copy is refreshed whenever the activity
+     * comes back: a settings file written while the app was backgrounded, or an evening filed by the nightly path
+     * minutes ago, would otherwise stay invisible until the process restarted.
+     */
+    override fun onResume() {
+        super.onResume()
         reload()
     }
 
@@ -166,9 +180,17 @@ class MainActivity : ComponentActivity() {
         FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
 
     /**
-     * Reduce Motion, read the way Android actually exposes it: the animator duration scale is the developer-option
-     * switch and the one the system honours, and at 0 no animation of any length runs. The brief's "or reduce-motion
-     * is on" resolves to this same flag on every device this app can install on.
+     * The brief names two triggers, and only one of them exists as an API. Measured, not assumed: `javap` on the
+     * compile SDK's `android-35.jar` shows `android.view.accessibility.AccessibilityManager` has no reduce-motion
+     * method (its motion-adjacent surface is `isTouchExplorationEnabled` and `isAudioDescriptionRequested`), and the
+     * only animation scales in `Settings.Global`, `Settings.Secure` and `Settings.System` are `ANIMATOR_DURATION_SCALE`,
+     * `TRANSITION_ANIMATION_SCALE` and `WINDOW_ANIMATION_SCALE`. Android's accessibility "Remove animations" toggle
+     * therefore has no public read path here, and this app does not guess at a hidden settings key to fake one.
+     *
+     * What this does honour is the developer-option scale, which is the switch that actually kills the filmstrip's
+     * animation on API 27 up. Whether the a11y toggle also writes this scale is Step 10's question on a real device;
+     * this host's emulator screencap cannot show a camera frame at all, so nothing about the strip's motion has been
+     * observed here yet.
      */
     private fun reduceMotion(): Boolean =
         android.provider.Settings.Global.getFloat(

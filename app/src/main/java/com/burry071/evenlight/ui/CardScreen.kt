@@ -10,11 +10,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,6 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
@@ -161,12 +164,18 @@ fun BandField(bands: List<Color>, modifier: Modifier = Modifier) {
  *
  * Night theme: the detail screen is the night, and it stays night on a phone set to light mode (spec section 8).
  * The artefact itself is paper - that is the card that was drawn - so the two are deliberately different surfaces.
+ *
+ * `cardMaxWidth` is the design system's cap on how large a card may be drawn, not a layout convenience: the mockup
+ * sizes the card as an object on a surface, so a wide window gets a centred 340 dp card (420 dp in the expanded
+ * stack's detail pane) rather than a print the width of a tablet.
  */
 @Composable
 fun CardScreen(
     cardFile: File,
+    hasRawPhoto: Boolean,
     onRawPhoto: () -> Unit,
     onShare: () -> Unit,
+    cardMaxWidth: Dp = 340.dp,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -177,7 +186,17 @@ fun CardScreen(
             .padding(horizontal = 20.dp)
             .padding(top = 14.dp)
     ) {
-        CardDetail(cardFile = cardFile, onRawPhoto = onRawPhoto, onShare = onShare)
+        Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.TopCenter) {
+            CardDetail(
+                cardFile = cardFile,
+                hasRawPhoto = hasRawPhoto,
+                onRawPhoto = onRawPhoto,
+                onShare = onShare,
+                // `widthIn` before `fillMaxWidth`: the cap has to narrow the incoming constraint, or the fill
+                // takes the whole window and the card prints at tablet width regardless of the number.
+                modifier = Modifier.widthIn(max = cardMaxWidth).fillMaxWidth()
+            )
+        }
     }
 }
 
@@ -188,15 +207,25 @@ fun CardScreen(
  *
  * The PNG is decoded off the main thread: it is a 1080x1440 bitmap and this screen is reached by a tap the user
  * expects to be instant.
+ *
+ * `raw photo` only appears when the raw JPEG is actually readable. An action that silently does nothing is the
+ * failure this screen's own caption promises against, and a missing raw file is normal: the app keeps the last
+ * few shots and the OS is free to clear them.
  */
 @Composable
-fun CardDetail(cardFile: File, onRawPhoto: () -> Unit, onShare: () -> Unit, modifier: Modifier = Modifier) {
+fun CardDetail(
+    cardFile: File,
+    hasRawPhoto: Boolean,
+    onRawPhoto: () -> Unit,
+    onShare: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     val bitmap by produceState<Bitmap?>(null, cardFile.path) {
         value = withContext(Dispatchers.IO) {
             if (cardFile.canRead()) BitmapFactory.decodeFile(cardFile.path) else null
         }
     }
-    Column(modifier = modifier.fillMaxWidth()) {
+    Column(modifier = modifier.fillMaxHeight()) {
         bitmap?.let { bmp ->
             Image(
                 bitmap = bmp.asImageBitmap(),
@@ -221,7 +250,7 @@ fun CardDetail(cardFile: File, onRawPhoto: () -> Unit, onShare: () -> Unit, modi
             horizontalArrangement = Arrangement.spacedBy(22.dp)
         ) {
             // The 48 dp target is invisible padding, not a bigger label.
-            CardAction("raw photo", onClick = onRawPhoto)
+            if (hasRawPhoto) CardAction("raw photo", onClick = onRawPhoto)
             CardAction("share", onClick = onShare)
         }
         Spacer(Modifier.weight(1f))

@@ -144,28 +144,33 @@ private fun StackList(
         ) {
             items(days.size) { i ->
                 val day = days[i]
-                StackRow(
-                    day = day,
-                    record = byDate[day.toString()]?.lastOrNull(),
-                    isHole = day in holes,
-                    largeFont = largeFont,
-                    settle = gridCentreProgress(grid, i),
-                    onClick = { onOpen(day.toString()) }
-                )
+                // Centred inside the cell, because a 340 dp card in a 410 dp cell otherwise hugs the left edge.
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+                    StackRow(
+                        day = day,
+                        record = byDate[day.toString()]?.lastOrNull(),
+                        isHole = day in holes,
+                        largeFont = largeFont,
+                        settle = gridCentreProgress(grid, i),
+                        onClick = { onOpen(day.toString()) }
+                    )
+                }
             }
         }
     } else {
         val list = rememberLazyListState()
         LazyColumn(state = list, verticalArrangement = Arrangement.spacedBy(gap), modifier = Modifier.fillMaxSize()) {
             itemsIndexed(days) { i, day ->
-                StackRow(
-                    day = day,
-                    record = byDate[day.toString()]?.lastOrNull(),
-                    isHole = day in holes,
-                    largeFont = largeFont,
-                    settle = listCentreProgress(list, i),
-                    onClick = { onOpen(day.toString()) }
-                )
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+                    StackRow(
+                        day = day,
+                        record = byDate[day.toString()]?.lastOrNull(),
+                        isHole = day in holes,
+                        largeFont = largeFont,
+                        settle = listCentreProgress(list, i),
+                        onClick = { onOpen(day.toString()) }
+                    )
+                }
             }
         }
     }
@@ -218,6 +223,12 @@ private fun StackRow(
 
     Column(
         Modifier
+            // The brief's card cap: 340 dp, and nothing in the stack is wider than that. At 600-840 dp two-up a cell
+            // reaches ~410 dp at the top of the range, and a card that wide stops being the object the mockup drew.
+            // Compact phones are already under it (360 dp - 40 dp padding), so the cap only bites on a foldable.
+            // `widthIn` before `fillMaxWidth`: a fill first takes the whole cell and the cap only shrinks the
+            // content, leaving the card's border and tap area wide while its insides sit at 340 dp.
+            .widthIn(max = 340.dp)
             .fillMaxWidth()
             .graphicsLayer {
                 scaleX = 0.97f + 0.03f * settle
