@@ -245,7 +245,10 @@ private fun StackRow(
             .clip(cardShape())
             .border(1.dp, EvenlightColors.NightHairline, cardShape())
             .background(EvenlightColors.NightSurface)
-            .clickable(onClick = onClick)
+            // A hole is display-only. It used to open the card screen, which has no record to show: a placeholder,
+            // no actions, and copy the spec never wrote (ledger R12). Neither the plan nor spec 8 gives a hole a
+            // tap target - it exists so the gap is visible, and the gap is the whole message.
+            .clickable(enabled = !isHole, onClick = onClick)
     ) {
         if (!isHole && record != null && bands != null) {
             BandField(bands, Modifier.fillMaxWidth().height(88.dp))
