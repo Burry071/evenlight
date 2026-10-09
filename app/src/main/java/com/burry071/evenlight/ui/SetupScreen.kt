@@ -117,7 +117,7 @@ fun SetupScreen(
         Spacer(Modifier.weight(1f))
         Box(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
             Text(
-                if (canSave) "saved to this device only" else "needs a place and a pair like 31.52, 74.35",
+                if (canSave) "saved to this device only" else "needs a place and a pair like 51.51, -0.13",
                 style = EvenlightType.caption,
                 color = EvenlightColors.Muted
             )
