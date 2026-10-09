@@ -2708,13 +2708,14 @@ git commit -m "feat: capture to card, with the record written before the render"
 
 `design/evenlight-mockups.html` is the visual source of truth for spacing, weights, and the night theme. This task is transcription, not invention — if a screen and the mockup disagree, the mockup wins unless the difference is a measured colour.
 
-**Files:** Create `app/.../ui/theme/{Color,Type,Theme}.kt`, `ui/FramingGuide.kt`, `ui/{Tonight,Shoot,Card,Stack,Setup}Screen.kt`, `ui/EvenlightNav.kt`; Modify `MainActivity.kt`; Create `app/src/main/res/font/{fraunces_variable,instrument_sans_variable}.ttf` and `LICENSES/`
+**Files:** Create `app/.../ui/theme/{Color,Type,Theme}.kt`, `ui/FramingGuide.kt`, `ui/StackDays.kt`, `ui/{Tonight,Shoot,Card,Stack,Setup}Screen.kt`, `ui/EvenlightNav.kt`; Modify `MainActivity.kt`; Create `app/src/test/java/com/burry071/evenlight/{StackDays,PaletteDiscipline}Test.kt`
 
 **Interfaces:**
-- Consumes: `EvenlightController`, `Store`, `SunWindow`, `Palette`, `CardGeometry`.
-- Produces: `object EvenlightColors`, `object EvenlightType`, `@Composable EvenlightTheme(dark: Boolean, content: @Composable () -> Unit)`, `@Composable FramingGuide(modifier: Modifier)`.
+- Consumes: `EvenlightController` (`suspend fun shoot(): Result<EveningRecord>`, `companion object { fun forDevice(activity, store, settings, frame) }`), `Store` (`readRecords()`, `eveningsWithCards(): Set<String>`, `cardFile(date): File`, `loadSettings()`, `saveSettings(Settings)`), `Settings(place, lat, lon)` with `isSet`, `SunWindow` (`sunset(date, g, zone): ZonedDateTime`, `altitudeForDisplay(instantUtc, g): Int`), `Palette`, `CardGeometry`.
+- Produces: `object EvenlightColors`, `object EvenlightType`, `@Composable EvenlightTheme(dark: Boolean, content: @Composable () -> Unit)`, `@Composable FramingGuide(modifier: Modifier)`, `object StackDays { fun days(first, today): List<LocalDate>; fun holes(days: List<LocalDate>, held: Set<String>): Set<LocalDate> }`.
+- Navigation is hand-rolled: this repo's Gradle cache has no `androidx.navigation` artifact and the build is `--offline`, so `EvenlightNav.kt` is a `Screen` sealed hierarchy plus `rememberSaveable` state and a `BackHandler` — not a NavHost (ledger R2). Same for the responsive classes: no `material3.adaptive`, so breakpoints come from `BoxWithConstraints` (R1).
 
-- [ ] **Step 1: Ask, then bundle the fonts.** They must ship in the APK because the app has no network. Both are SIL OFL, so bundling is permitted — but this adds third-party content to a repo that will be published, so confirm first.
+- [x] **Step 1: Ask, then bundle the fonts.** DONE — the user approved the download on 2026-10-09, the four files landed, and they are committed as `36af0ad` (`fraunces_variable.ttf` 360,440 B / 4 fvar axes, `instrument_sans_variable.ttf` 194,336 B / 2 axes, plus both OFL texts in `LICENSES/`). Kept here so the approved command stays on the record:
 
 ```bash
 mkdir -p app/src/main/res/font LICENSES
@@ -2779,39 +2780,174 @@ object EvenlightType {
 }
 ```
 
-- [ ] **Step 3: Tonight.** One line and one number: `in 14 min` in `hero`, `sunset 17:40 · evening 4` in `caption`, the latest card as a 186 dp preview, and a pill `Shoot` enabled at any hour — the app says when the light is interesting, never whether to act. Recompute the countdown with `LaunchedEffect` + `delay(30_000)`, never a service. If `Settings.isSet` is false, this screen is the setup form instead.
+`Theme.kt` exists so that `MaterialTheme` cannot supply its own defaults. `lightColorScheme()` and `darkColorScheme()` are built from `EvenlightColors` only — `surface`/`background`/`onBackground`/`primary`/`onPrimary`/`outline` mapped onto Card, Ink, NightSurface, NightText and the two hairlines — and every `Text` in every screen carries an explicit `style = EvenlightType.…`. That second half is the load-bearing part: `MaterialTheme.typography` is Roboto, so one `Text("…")` without a style renders in the wrong family at the wrong size and nothing fails. Same rule as the hex literal: if it needs a colour or a size, it comes from `Palette`/`EvenlightType`.
 
-- [ ] **Step 4: Shoot.** Full-bleed `PreviewView` via `AndroidView`, a top-left chip reading `sunset 17:40 · +6 min`, the centred white pill, and `FramingGuide` over it:
+```kotlin
+package com.burry071.evenlight.ui.theme
+
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
+
+@Composable
+fun EvenlightTheme(dark: Boolean, content: @Composable () -> Unit) {
+    val scheme = if (dark) {
+        darkColorScheme(
+            primary = EvenlightColors.NightText, onPrimary = EvenlightColors.NightSurface,
+            surface = EvenlightColors.NightSurface, onSurface = EvenlightColors.NightText,
+            background = EvenlightColors.NightSurface, onBackground = EvenlightColors.NightText,
+            outline = EvenlightColors.NightHairline
+        )
+    } else {
+        lightColorScheme(
+            primary = EvenlightColors.Ink, onPrimary = EvenlightColors.Paper,
+            surface = EvenlightColors.Card, onSurface = EvenlightColors.Ink,
+            background = EvenlightColors.Paper, onBackground = EvenlightColors.Ink,
+            outline = EvenlightColors.Hairline
+        )
+    }
+    MaterialTheme(colorScheme = scheme, content = content)
+}
+```
+
+The night flag is a parameter, not `isSystemInDarkTheme()`: the stack and detail screens are dark because they are the night, and they stay dark on a phone set to light mode (spec section 8). `Palette.HAIRLINE` is consumed here for the first time — it has no other user in the app, and an unused palette constant is a colour the design claims and the chrome never shows.
+
+- [ ] **Step 3: Two tests before any screen, because two of this task's rules rot silently.** Neither needs a dependency, and neither can be written after the fact without rewriting a composable to be testable. `:core` is frozen, so both live in `:app`.
+
+`ui/StackDays.kt` is pure Kotlin — no `android.*`, no Compose import, or the JVM test cannot load it:
+
+```kotlin
+package com.burry071.evenlight.ui
+
+import java.time.LocalDate
+
+/**
+ * Every evening the stack must show, whether or not it has a card. The range runs from the first card to
+ * today and the holes are kept: a gap is the product's claim about a week, so a list built from the cards
+ * that exist would silently collapse it.
+ *
+ * `first` is the earliest card's date, not the date the app was installed: an evening that was never shot
+ * before the app existed was never an evening, and inventing it would put a hole in the record for a day
+ * the user could not have stood on a balcony.
+ */
+object StackDays {
+    fun days(first: LocalDate, today: LocalDate): List<LocalDate> {
+        if (today.isBefore(first)) return emptyList()
+        return (0L..java.time.temporal.ChronoUnit.DAYS.between(first, today))
+            .map { first.plusDays(it) }
+    }
+
+    /** `held` is `Store.eveningsWithCards()` — ISO `yyyy-MM-dd` strings, the same text as a card filename. */
+    fun holes(days: List<LocalDate>, held: Set<String>): Set<LocalDate> =
+        days.filterNot { it.toString() in held }.toSet()
+}
+```
+
+```kotlin
+class StackDaysTest {
+    @Test fun rangeIncludesBothEnds() {
+        assertEquals(
+            listOf(LocalDate.of(2026, 10, 5), LocalDate.of(2026, 10, 6), LocalDate.of(2026, 10, 7)),
+            StackDays.days(LocalDate.of(2026, 10, 5), LocalDate.of(2026, 10, 7))
+        )
+    }
+
+    @Test fun oneEveningRangeIsThatEvening() {
+        assertEquals(listOf(d(2026, 10, 7)), StackDays.days(d(2026, 10, 7), d(2026, 10, 7)))
+    }
+
+    @Test fun todayBeforeFirstCardIsEmptyNotOneNegativeSpan() {
+        assertEquals(emptyList<LocalDate>(), StackDays.days(d(2026, 10, 9), d(2026, 10, 7)))
+    }
+
+    @Test fun holesAreTheRangeMinusTheCards() {
+        val days = StackDays.days(d(2026, 10, 5), d(2026, 10, 7))
+        assertEquals(setOf(d(2026, 10, 6)), StackDays.holes(days, setOf("2026-10-05", "2026-10-07")))
+    }
+
+    @Test fun aHoleSurvivesWhenNoCardExistsAtAll() {
+        // The empty stack is the case a reviewer sees first: every evening is a hole, and none is dropped.
+        val days = StackDays.days(d(2026, 10, 1), d(2026, 10, 4))
+        assertEquals(4, days.size)
+        assertEquals(days.toSet(), StackDays.holes(days, emptySet()))
+    }
+
+    @Test fun aCardOutsideTheRangeIsIgnored() {
+        assertEquals(emptySet<LocalDate>(), StackDays.holes(listOf(d(2026, 10, 5)), setOf("2026-10-09")))
+    }
+
+    private fun d(y: Int, m: Int, day: Int) = LocalDate.of(y, m, day)
+}
+```
+
+`PaletteDisciplineTest` reads its subject off the disk like `ManifestTest` does — the rule it enforces is exactly the one a compiler cannot see, and this host has no Compose runtime in unit tests:
+
+```kotlin
+class PaletteDisciplineTest {
+    private val uiDir = File("src/main/java/com/burry071/evenlight/ui")
+
+    @Test fun everyChromeColourComesFromPalette() {
+        val offenders = uiDir.walkTopDown().filter { it.isFile && it.extension == "kt" }
+            .flatMap { f -> Regex("Color\\(\\s*0[xX]").findAll(f.readText()).map { "${f.name}: $it" } }
+            .toList()
+        assertTrue("hex passed straight to Color(): $offenders", offenders.isEmpty())
+    }
+
+    @Test fun uiDirectoryExists() {
+        // Fails loudly if the package path moves, because an empty walk would make the rule above vacuously true.
+        assertTrue("no such directory: ${uiDir.path}", uiDir.isDirectory)
+    }
+}
+```
+
+The framing guide's two strokes are `Color.White` and a dark alpha — no hex, so they clear the regex. They are the only colours in the app that are not `Palette` constants, because they sit over the camera rather than on the paper (ledger R6).
+
+Run `"$GRADLE" :app:testDebugUnitTest --offline` and watch both fail before implementing (`StackDays` does not exist yet, and `ui/` has no directory): a test that passes on an empty walk or a missing package is the failure mode this project has already been bitten by twice.
+
+- [ ] **Step 4: Tonight.** One line and one number: `in 14 min` in `hero`, `sunset 17:40 · evening 4` in `caption`, the latest card as a 186 dp preview, and a pill `Shoot` enabled at any hour — the app says when the light is interesting, never whether to act. Recompute the countdown with `LaunchedEffect` + `delay(30_000)`, never a service. If `Settings.isSet` is false, this screen is the setup form instead.
+
+- [ ] **Step 5: Shoot.** Full-bleed `PreviewView` via `AndroidView`, a top-left chip reading `sunset 17:40 · +6 min`, the centred white pill, and `FramingGuide` over it:
 
 ```kotlin
 @Composable
 fun FramingGuide(modifier: Modifier = Modifier) {
     Canvas(modifier) {
-        val paint = androidx.compose.ui.graphics.Paint().apply {
-            color = Color.White
-            blendMode = BlendMode.Difference
-            strokeWidth = 1f
+        val t = 1f
+        listOf(size.width / 3f, 2f * size.width / 3f).forEach { x ->
+            drawLine(Color.Black.copy(alpha = 0.55f), Offset(x + t, 0f), Offset(x + t, size.height), t)
+            drawLine(Color.White.copy(alpha = 0.9f), Offset(x, 0f), Offset(x, size.height), t)
         }
-        drawLine(paint, Offset(size.width / 3f, 0f), Offset(size.width / 3f, size.height))
-        drawLine(paint, Offset(2f * size.width / 3f, 0f), Offset(2f * size.width / 3f, size.height))
-        drawLine(paint, Offset(0f, size.height / 2f), Offset(size.width, size.height / 2f))
+        val y = size.height / 2f
+        drawLine(Color.Black.copy(alpha = 0.55f), Offset(0f, y + t), Offset(size.width, y + t), t)
+        drawLine(Color.White.copy(alpha = 0.9f), Offset(0f, y), Offset(size.width, y), t)
     }
 }
 ```
 
-Difference-blend white renders as the inverse of whatever is underneath, which is why three hairlines stay visible over both a dark band and a bright one where a single fixed alpha cannot. No reference image, no per-frame sampling.
+A white hairline offset by one pixel over a dark one stays legible over a black band and over a blown-out
+cloud, which is the property the mockup wanted from `mix-blend-mode: difference` and the reason CSS could
+get it with one line. Android cannot: the camera frames arrive through `PreviewView` in a different layer,
+so a `BlendMode.Difference` inside this Canvas would invert only what Compose drew in this same pass and
+would paint a white line over the sky — invisible on the bright half of it. The earlier draft of this step
+also called `DrawScope.drawLine(paint, p1, p2)`, which does not exist; `javap` on the cached
+`ui-graphics-android 1.9.0` shows `DrawScope` has two `drawLine` overloads, `(Color, …)` and `(Brush, …)`,
+and no method that takes an `androidx.compose.ui.graphics.Paint` at all. Ledger R6. No reference image, no
+per-frame sampling.
 
-- [ ] **Step 5: Card and Stack.** Detail = the rendered PNG plus two quiet text actions (`raw photo`, `share`) and the line `filed automatically · nothing to press`. Stack = a vertical `LazyColumn` covering **every date from the first card to today**, with an outlined empty card and its date wherever `eveningsWithCards()` has no entry — that set difference is what makes a hole knowable. Night theme. Cards scale `.97 → 1` and straighten `1.2° → 0°` from the scroll offset via `graphicsLayer` on the render thread; drop the rotation first if the frame budget misses 60 fps.
+- [ ] **Step 6: Card and Stack.** Detail = the rendered PNG plus two quiet text actions (`raw photo`, `share`) and the line `filed automatically · nothing to press`. Both actions leave the app's own directory, so both need a `content://` URI: a `file://` extra throws `FileUriExposedException` from API 24 up. Declare `androidx.core.content.FileProvider` (already on disk via `core-ktx 1.15.0`, so `--offline` is safe) with authority `${applicationId}.fileprovider`, `exported="false"`, `grantUriPermissions="true"`, and a `res/xml/file_paths.xml` rooted at `files/` so `evenlight/cards` and `evenlight/raw` are covered; `raw photo` is `ACTION_VIEW` and `share` is `ACTION_SEND`, both with `FLAG_GRANT_READ_URI_PERMISSION`. Add one assertion to `ManifestTest` that the merged `src/main/AndroidManifest.xml` declares the provider and that `file_paths.xml` exists — a provider the manifest forgot is exactly the failure that shows the action working in code and crashing on a phone. The permission set must stay `{CAMERA}` (ledger R7).
 
-- [ ] **Step 6: Motion, in `ShootScreen` only.** 450 ms shutter→card exactly as the mockup's filmstrip: press-in scale `.97` at 0 ms, band reveal by clip height at 120/240 ms, winner strip at 360 ms, name opacity 0→1 over 120 ms starting at 330 ms. `spring(stiffness = 220, damping = 1)` on the clip, linear on the fade, no overshoot. Never animate height. Haptics: light tick on press-in, success when the card files, none on scroll, none in a loop, none while the model writes. If `Settings.Global.ANIMATOR_DURATION_SCALE == 0f` or reduce-motion is on, collapse to a 120 ms cross-fade.
+Stack = a vertical `LazyColumn` over `StackDays.days(first, today)` from Step 3, drawing the card where the date is in `eveningsWithCards()` and an outlined empty card with its date where it is not — that set difference is what makes a hole knowable, which is why the row list comes from `StackDays` and not from `readRecords()`. Night theme. Cards scale `.97 → 1` and straighten `1.2° → 0°` from the scroll offset via `graphicsLayer` on the render thread; drop the rotation first if the frame budget misses 60 fps.
 
-- [ ] **Step 7: Setup.** Two fields — place label, lat/lon to two decimals — with `KeyboardOptions(keyboardType = KeyboardType.NumberPassword)` for the coordinates and no location permission anywhere.
+- [ ] **Step 7: Motion, in `ShootScreen` only.** 450 ms shutter→card exactly as the mockup's filmstrip: press-in scale `.97` at 0 ms, band reveal by clip height at 120/240 ms, winner strip at 360 ms, name opacity 0→1 over 120 ms starting at 330 ms. `spring(stiffness = 220, damping = 1)` on the clip, linear on the fade, no overshoot. Never animate height. Haptics: light tick on press-in, success when the card files, none on scroll, none in a loop, none while the model writes. If `Settings.Global.ANIMATOR_DURATION_SCALE == 0f` or reduce-motion is on, collapse to a 120 ms cross-fade.
 
-- [ ] **Step 8: Responsive classes.** Use `currentWindowAdaptiveInfo()` / `WindowSizeClass`: compact 1-up; medium 2-up with the card capped at 340 dp and centred; expanded ≥ 840 dp two panes (stack 38 %, detail 62 %, card max 420 dp). No bottom navigation at any width — four destinations and a back gesture. Above 1.15× font scale, cap the display size at 34 sp and drop the 1.2° rotation. Touch targets ≥ 48 dp.
+- [ ] **Step 8: Setup.** Two fields — place label, lat/lon to two decimals — with `KeyboardOptions(keyboardType = KeyboardType.NumberPassword)` for the coordinates and no location permission anywhere.
 
-- [ ] **Step 9: Manual review on the emulator.** All four screens side by side with the mockup. Fix drift in spacing, weight, or chrome colour. **Never fix drift by touching a measured band.** Check 360 dp and a 700 dp foldable window.
+- [ ] **Step 9: Responsive classes.** `currentWindowAdaptiveInfo()` is not in this repo's Gradle cache and the build is `--offline` (ledger R1), so the breakpoints come from `BoxWithConstraints { when { maxWidth < 600.dp -> … } }` — the same three classes, no new module: compact 1-up; medium 2-up with the card capped at 340 dp and centred; expanded ≥ 840 dp two panes (stack 38 %, detail 62 %, card max 420 dp). No bottom navigation at any width — four destinations and a back gesture. Above 1.15× font scale, cap the display size at 34 sp and drop the 1.2° rotation. Touch targets ≥ 48 dp. Non-full-bleed screens take `Modifier.statusBarsPadding()`; the Shoot preview runs under the bars.
 
-- [ ] **Step 10: Commit** `git commit -am "feat: four screens in the paper-and-ink system with a difference-blend framing guide"`.
+- [ ] **Step 10: Manual review on the emulator** — the controller's, not the implementer's, exactly like Task 8 Step 7. All four screens side by side with the mockup. Fix drift in spacing, weight, or chrome colour. **Never fix drift by touching a measured band.** Check 360 dp and a 700 dp foldable window.
+
+- [ ] **Step 11: Commit** with explicit paths — `git add app/src/main/java/com/burry071/evenlight/ui app/src/main/java/com/burry071/evenlight/MainActivity.kt app/src/test/java/com/burry071/evenlight/StackDaysTest.kt app/src/test/java/com/burry071/evenlight/PaletteDisciplineTest.kt && git commit -m "feat: four screens in the paper-and-ink system with a two-tone framing guide"`. (`-am` here would sweep the untracked `visual-coding-team-test/` directory that has been sitting in this working tree since the session before Task 1.)
 
 ---
 
