@@ -24,7 +24,8 @@ def wide():
     return img
 
 def narrow():
-    # 32 x 6: the ONLY fixture with width < TARGET_WIDTH. In BandSampler/sample, dh would be
+    # 32 x 6: a fixture with width < TARGET_WIDTH (sky_columns is the second one, from below and with real
+    # horizontal variation). In BandSampler/sample, dh would be
     # round_half_up(6*64/32) = 12 > the 6 source rows, so without the clamp both languages interpolate
     # rows that do not exist. Clamped to dh = 6, the eight bands repeat source rows as
     # r0,r0,r1,r2,r3,r3,r4,r5. Every other fixture is >= 64 px wide, where the clamp is the identity -
@@ -34,8 +35,24 @@ def narrow():
         img.paste((10 + y * 40, 250 - y * 35, 20 + y * 15), (0, y, 32, y + 1))
     return img
 
+def columns():
+    # Finding 2.2: every fixture above is row-uniform - within a row a == b == c == d - so a reviewer's
+    # mutants (x1 = x0, wx = 0.0, dropping the - 0.5 on fx, averaging 1 of 64 columns) all left both
+    # suites green. This one is 48 x 16: no row is uniform, every column carries its own colour, and the
+    # 64-wide row the bands average is a real interpolation of 48 distinct pixels (sx = 0.75, so the
+    # weights are 0.125 / 0.375 / 0.625 - live decisions for round-half-up). 48 < TARGET_WIDTH also
+    # repeats sky_narrow's dh-clamp pin from a second direction (dh = min(16, 21) = 16) - and the blue
+    # channel walks +3 per source row so the clamp has something to clamp: with row-identical columns the
+    # bands would read the same mean at dh = 21 as at dh = 16 and the pin would be decorative.
+    img = Image.new("RGB", (48, 16))
+    for x in range(48):
+        for y in range(16):
+            img.paste(((255 - 5 * x) % 256, (3 * x + x * x) % 256, (97 + 11 * x + 3 * y) % 256),
+                      (x, y, x + 1, y + 1))
+    return img
+
 # The plan writes these under "../../fixtures" because every other tool in Task 10 sits two levels
 # below the repo root (tools/python/); this file is already in fixtures/, so HERE is the output dir.
 for name, img in (("sky_ramp", ramp()), ("sky_blocks", blocks()), ("sky_wide", wide()),
-                  ("sky_narrow", narrow())):
+                  ("sky_narrow", narrow()), ("sky_columns", columns())):
     img.save(os.path.join(HERE, name + ".png"))
