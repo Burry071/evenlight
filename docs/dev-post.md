@@ -205,7 +205,7 @@ is a synthetic gradient with noise in it at the resolution a common phone shoots
 this repo is a real sky yet), and the spread between its two runs is why I give both numbers instead of a confident
 one. The band arithmetic is the same arithmetic as the Kotlin, line for line, and a test on both sides asserts
 against the same five PNG fixtures, so agreement is transitive and neither language can drift without a failure.
-89 Kotlin core tests, 48 app tests, 20 Python tests.
+89 Kotlin core tests, 49 app tests, 20 Python tests.
 
 ## The costs, stated before you discover them
 

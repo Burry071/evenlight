@@ -8,6 +8,7 @@ agreement is transitive (tools/python/test_skycard.py).
 Usage: python skycard.py PHOTO [-o card.png] [--print-json]
        python skycard.py --from-record RECORD.json [-o card.png] [--print-json]
 """
+import datetime
 import math
 import os
 
@@ -257,7 +258,7 @@ MARGIN, CHIP_W, CHIP_GAP, CHIP_R = 56, 46, 60, 8
 # R.font.fraunces_strip, whose XML pins 'wght' 400, 'opsz' 48, 'SOFT' 70, 'WONK' 1; the body face comes through
 # instrument_sans_medium.xml, which pins 'wght' 500, 'wdth' 100. Without these axes Pillow drew Fraunces'
 # DEFAULT instance (wght 900 "Black"), measured here at 492 px for "clearing" at size 116 against 427 px for
-# the pinned one, so the strip name was ~53 % heavier-cut and _wrapped broke the wording differently. Keys are
+# the pinned one - 15 % wider, and wider still on other names - so _wrapped broke the wording differently. Keys are
 # the fvar axis NAMES FreeType reports for these two committed files (Optical Size/Weight/Softness/Wonky for
 # Fraunces, Width/Weight for Instrument Sans) mapped from the XML's tags (wght=Weight, opsz=Optical Size,
 # SOFT=Softness, WONK=Wonky, wdth=Width). Every axis the two XML files name is settable through Pillow here,
@@ -399,8 +400,10 @@ def card_from_record(path, out_path):
     if isinstance(index, bool) or not isinstance(index, int) or not 0 <= index < BAND_COUNT:
         raise ValueError("record winner is not a band index: %r" % (rec["winner"],))
     date = rec["date"]
-    month, day = int(date[5:7]), int(date[8:10])
-    if not 1 <= month <= 12 or not 1 <= day <= 31:
+    try:
+        year, month, day = [int(x) for x in date.split("-")]
+        datetime.date(year, month, day)          # Kotlin's LocalDate.parse refuses 2026-02-30; so do we
+    except (ValueError, TypeError):
         raise ValueError("record date is not a calendar date: %s" % date)
     date_label = "%d %s" % (day, MONTHS[month - 1])               # the record's date, never EXIF, never mtime
     neighbours = [bands[i] for i in (index - 1, index + 1) if 0 <= i < len(bands)]

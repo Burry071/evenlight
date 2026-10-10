@@ -269,7 +269,7 @@ the number I remembered about it instead.
 - Two variable fonts are bundled, 554 KB, with their OFL texts in `LICENSES/`. Android cannot address a weight axis
   through the API people expect, so the variation is pinned in `<font-family>` XML under `app/src/main/res/font/`
   and loaded through `ResourcesCompat`.
-- Test counts on this host: 89 Kotlin core tests, 48 app tests, 20 Python tests.
+- Test counts on this host: 89 Kotlin core tests, 49 app tests, 20 Python tests.
 
 ## Permissions
 
@@ -349,7 +349,7 @@ device without one.
 ```bash
 export ANDROID_HOME=/path/to/Android/Sdk     # or create local.properties with sdk.dir=...
 gradle :app:assembleDebug                    # first run needs network for dependencies
-gradle :core:test :app:testDebugUnitTest     # 89 + 48 tests
+gradle :core:test :app:testDebugUnitTest     # 89 + 49 tests
 gradle :app:installDebug                     # or: adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
