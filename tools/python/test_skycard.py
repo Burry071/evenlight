@@ -13,14 +13,38 @@ def pixels_of(name):
 
 class Equivalence(unittest.TestCase):
     def test_bands_match_the_kotlin_goldens(self):
-        for name in ("sky_ramp", "sky_blocks", "sky_wide", "sky_narrow"):
+        for name in ("sky_ramp", "sky_blocks", "sky_wide", "sky_narrow", "sky_columns"):
             with self.subTest(name):
                 expected = json.load(open(os.path.join(FIX, name + ".bands.json")))["bands"]
-                self.assertEqual([s.upper() for s in expected], [s.upper() for s in skycard.bands_for(os.path.join(FIX, name + ".png"))])
+                # Compared verbatim, not case-folded (finding 2.8): FixtureEquivalenceTest.kt:38-40 diffs the
+                # strings as written and hex_of emits uppercase by construction (%02X), so upper() on both
+                # sides hid a Python-side hex-case drift that the Kotlin gate would catch. sky_columns is the
+                # fifth golden and the first with real horizontal variation (finding 2.2).
+                self.assertEqual(expected, skycard.bands_for(os.path.join(FIX, name + ".png")))
 
     def test_winner_and_name_follow_the_kotlin_rules(self):
-        self.assertEqual("brassy", skycard.name_for((0xC2, 0x85, 0x4A)))
-        self.assertEqual("slate", skycard.name_for((0x5C, 0x6B, 0x82)))
+        # This test's name promised winner and name; both old cases named an anchor its own colour (distance
+        # 0, so any metric passes) and winner was never called. Rewritten to the one exact tie Kotlin pins:
+        # MatcherTest.kt:52-59 - #D4CCBF is equidistant from milky (#CFC9BE) and linen (#D9CFC0), milky is
+        # earlier in the shared list, and name_for's strict `<` keeps it. That only holds if the metric and
+        # the list order agree across the two languages, which anchor-self-naming proved nothing about.
+        self.assertEqual("milky", skycard.name_for(skycard._parse_hex("#D4CCBF")))
+        # winner is the half the name always promised and never exercised: grey scale with one band made the
+        # most chromatic, and the winner must be that band - MatcherTest.kt:9-12's shape.
+        bands = [(10 + i * 12, 10 + i * 12, 10 + i * 12) for i in range(8)]
+        bands[5] = (194, 133, 74)
+        self.assertEqual(5, skycard.winner(bands))
+
+    def test_all_three_channels_participate_in_the_distance(self):
+        # MatcherTest.kt:61-68 (allThreeChannelsParticipateInTheDistance), ported: one grey plus three
+        # single-channel moves. A metric that dropped the green channel or compared red only named all four
+        # "flint" and left every other Python test green too, so until now a drop-a-channel regression here
+        # was invisible on this side of the contract. These four answers are only reachable if r, g and b all
+        # carry weight in the squared distance.
+        self.assertEqual("flint", skycard.name_for((128, 128, 128)))
+        self.assertEqual("copper", skycard.name_for((128, 128, 0)))
+        self.assertEqual("still", skycard.name_for((0, 128, 128)))
+        self.assertEqual("bruised", skycard.name_for((128, 0, 128)))
 
     def test_vocabulary_is_the_same_thirty_five_words(self):
         self.assertEqual(35, len(skycard.VOCABULARY))
@@ -38,14 +62,31 @@ class Equivalence(unittest.TestCase):
                          [(w, skycard.hex_of(a)) for w, a in skycard.VOCABULARY])
 
     def test_the_narrow_fixture_bands_are_repeated_source_rows_not_invented_rows(self):
-        # sky_narrow is the only input under TARGET_WIDTH, so it is the only thing that pins the dh clamp
-        # in sample(). Unclamped, dh would be 12 for a 6-row source and both languages would interpolate
-        # rows that do not exist - while the three >= 64 px fixtures, where the clamp is the identity,
-        # would stay green. Hence the rows are asserted here, not only through the golden file.
+        # sky_narrow is one of the two inputs under TARGET_WIDTH (sky_columns is the other), so it is what
+        # pins the dh clamp in sample() for a row-uniform source. Unclamped, dh would be 12 for a 6-row
+        # source and both languages would interpolate rows that do not exist - while the >= 64 px fixtures,
+        # where the clamp is the identity, would stay green. Hence the rows are asserted here, not only
+        # through the golden file. sky_columns pins the same clamp with real horizontal variation and is
+        # checked through the golden loop rather than hand-listed rows, because its columns are not uniform.
         src, w, h = pixels_of("sky_narrow")
         bands, _ = skycard.sample(src, w, h)
         rows = [((src[y * w] >> 16) & 0xFF, (src[y * w] >> 8) & 0xFF, src[y * w] & 0xFF) for y in range(h)]
         self.assertEqual([rows[0], rows[0], rows[1], rows[2], rows[3], rows[3], rows[4], rows[5]], bands)
+
+    def test_the_band_average_tie_rounds_half_up_not_bankers(self):
+        # BandSamplerTest.kt:47-51's mirror (finding 2.1): a 128x2 frame, left half black, right half 253.
+        # Each of the two source rows bilinear-maps whole (fx pairs columns), so every small pixel is 0 or
+        # 253 and the tie is not in the resample - it is the band average: 32 columns of 0 plus 32 of 253 over
+        # 64 = 126.5, which round_half_up answers 127 and banker's rounding answers the even 126. Kotlin
+        # asserts 127 against the same frame, so the tie direction is a cross-language contract, not a
+        # one-side default.
+        w = 128
+        src = []
+        for _ in range(2):
+            for x in range(w):
+                src.append(0 if x < w // 2 else (253 << 16) | (253 << 8) | 253)
+        bands, _ = skycard.sample(src, w, 2)
+        self.assertEqual((127, 127, 127), bands[0])
 
     def test_the_winner_tie_breaks_the_way_matcher_does(self):
         # Matcher.winner: strictly greater chroma range wins, equal range goes to the higher luminance,
@@ -169,6 +210,26 @@ class Equivalence(unittest.TestCase):
         self.assertEqual(bands[2], rgb.getpixel((0, 800)))
         self.assertEqual(bands[1], rgb.getpixel((920, 1060)))
         self.assertEqual(bands[3], rgb.getpixel((980, 1060)))
+
+    def test_the_card_fonts_apply_the_pinned_variable_axes(self):
+        # Finding 2.5: Pillow hands back a variable font's DEFAULT instance unless the fvar axes are set, and
+        # Fraunces' default is wght 900 ("Black"). The shipped card does not draw that - EvenlightController
+        # loads fraunces_strip.xml, which pins wght 400 (plus opsz 48, SOFT 70, WONK 1), and the body face
+        # comes through instrument_sans_medium.xml (wght 500, wdth 100). _font must set them or the card
+        # renders a heavier, differently-wrapping face than the app files. Asserted as a direction, not a
+        # brittle absolute width: the lighter Fraunces cut is measurably narrower than the 900 default, and
+        # the sans must move off its default too. If _font ignored the axes both widths would equal the
+        # default and the test dies - which is exactly the parity the fix claims.
+        from PIL import Image, ImageDraw, ImageFont
+        probe = ImageDraw.Draw(Image.new("RGB", (10, 10)))
+        default_display = ImageFont.truetype(skycard.DISPLAY_FONT, 116)
+        pinned_display = skycard._font(skycard.DISPLAY_FONT, 116, skycard.DISPLAY_VARIATIONS)
+        self.assertLess(probe.textlength("clearing", font=pinned_display),
+                        probe.textlength("clearing", font=default_display))
+        default_body = ImageFont.truetype(skycard.TEXT_FONT, 116)
+        pinned_body = skycard._font(skycard.TEXT_FONT, 116, skycard.BODY_VARIATIONS)
+        self.assertNotEqual(probe.textlength("clearing", font=pinned_body),
+                            probe.textlength("clearing", font=default_body))
 
     def test_the_cli_prints_only_what_it_measured(self):
         out = os.path.join(tempfile.mkdtemp(), "card.png")

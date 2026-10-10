@@ -167,7 +167,10 @@ _WORDS = [
 
 def _parse_hex(s):
     """VocabWord.anchor via Pixels.parseHex, returning the (r, g, b) triple Pillow draws."""
-    t = s.lstrip("#")
+    # removePrefix parity (finding 2.8): Pixels.kt:34 does s.removePrefix("#"), which strips exactly one
+    # leading hash; lstrip("#") strips every one, so "##C2854A" parsed here but Kotlin's require(length==6)
+    # refuses it. Same reader, same rule: drop one '#' if present, leave the string otherwise untouched.
+    t = s[1:] if s.startswith("#") else s
     if len(t) != 6:
         raise ValueError("not a hex colour: %s" % s)
     return tuple(int(t[i:i + 2], 16) for i in (0, 2, 4))
@@ -250,12 +253,34 @@ TEXT_FONT = os.path.join(FONT_DIR, "instrument_sans_variable.ttf")
 STRIP_SIZE, DATE_SIZE, SUN_SIZE, WORDING_SIZE, FOOTER_SIZE = 116, 62, 40, 44, 32
 MARGIN, CHIP_W, CHIP_GAP, CHIP_R = 56, 46, 60, 8
 
+# The variable-font instances the shipped card actually draws (finding 2.5). EvenlightController.kt:194 loads
+# R.font.fraunces_strip, whose XML pins 'wght' 400, 'opsz' 48, 'SOFT' 70, 'WONK' 1; the body face comes through
+# instrument_sans_medium.xml, which pins 'wght' 500, 'wdth' 100. Without these axes Pillow drew Fraunces'
+# DEFAULT instance (wght 900 "Black"), measured here at 492 px for "clearing" at size 116 against 427 px for
+# the pinned one, so the strip name was ~53 % heavier-cut and _wrapped broke the wording differently. Keys are
+# the fvar axis NAMES FreeType reports for these two committed files (Optical Size/Weight/Softness/Wonky for
+# Fraunces, Width/Weight for Instrument Sans) mapped from the XML's tags (wght=Weight, opsz=Optical Size,
+# SOFT=Softness, WONK=Wonky, wdth=Width). Every axis the two XML files name is settable through Pillow here,
+# so this stays a true parity claim rather than an approximation.
+DISPLAY_VARIATIONS = {"Optical Size": 48, "Weight": 400, "Softness": 70, "Wonky": 1}
+BODY_VARIATIONS = {"Width": 100, "Weight": 500}
 
-def _font(path, size):
+
+def _font(path, size, variations=None):
     if not os.path.isfile(path):
         raise FileNotFoundError("bundled font missing: %s (the card draws no system-face stand-in)" % path)
     from PIL import ImageFont
-    return ImageFont.truetype(path, size)
+    font = ImageFont.truetype(path, size)
+    if variations:
+        axes = font.get_variation_axes()
+        names = [a["name"].decode("ascii") for a in axes]
+        missing = [n for n in variations if n not in names]
+        if missing:
+            # Never imply parity we did not get: if Pillow cannot reach an axis the XML names, this says
+            # which one instead of silently drawing the default instance and calling it the card's type.
+            raise ValueError("cannot set these fvar axes on %s: %s" % (os.path.basename(path), ", ".join(missing)))
+        font.set_variation_by_axes([variations.get(n, a["default"]) for n, a in zip(names, axes)])
+    return font
 
 
 def _wrapped(draw, text, font, max_width):
@@ -312,11 +337,11 @@ def render_card(bands, out_path, winner_index=None, name=None, date_label=None, 
     draw.rectangle([0, geo.strip_top, geo.width - 1, geo.field_height - 1], fill=strip)
     # "ls" anchors on the baseline, which is the coordinate Android's drawText is given.
     draw.text((MARGIN, geo.strip_top + geo.strip_height * 0.72), name,
-              font=_font(DISPLAY_FONT, STRIP_SIZE), fill=geo.ink_on(strip), anchor="ls")
+              font=_font(DISPLAY_FONT, STRIP_SIZE, DISPLAY_VARIATIONS), fill=geo.ink_on(strip), anchor="ls")
 
     if date_label:
         draw.text((MARGIN, geo.paper_top + 120), date_label,
-                  font=_font(DISPLAY_FONT, DATE_SIZE), fill=Palette.INK, anchor="ls")
+                  font=_font(DISPLAY_FONT, DATE_SIZE, DISPLAY_VARIATIONS), fill=Palette.INK, anchor="ls")
 
     # A photo carries neither a place nor a time, so the photo path passes no sun altitude and the line stays
     # off the card - printing one would put an unmeasured number on a card whose whole claim is that it has
@@ -324,7 +349,7 @@ def render_card(bands, out_path, winner_index=None, name=None, date_label=None, 
     # --from-record supplies it and it lands at CardRenderer's position.
     if sun_altitude_deg is not None:
         draw.text((MARGIN, geo.paper_top + 186), "sun %d\u00B0" % sun_altitude_deg,
-                  font=_font(TEXT_FONT, SUN_SIZE), fill=Palette.MUTED, anchor="ls")
+                  font=_font(TEXT_FONT, SUN_SIZE, BODY_VARIATIONS), fill=Palette.MUTED, anchor="ls")
 
     if neighbours is None:
         neighbours = [bands[i] for i in (index - 1, index + 1) if 0 <= i < len(bands)]
@@ -334,7 +359,7 @@ def render_card(bands, out_path, winner_index=None, name=None, date_label=None, 
                                radius=CHIP_R, fill=n)
         x += CHIP_GAP
 
-    body = _font(TEXT_FONT, WORDING_SIZE)
+    body = _font(TEXT_FONT, WORDING_SIZE, BODY_VARIATIONS)
     y = geo.paper_top + 290
     for line in _wrapped(draw, wording, body, geo.width - 2 * MARGIN):
         draw.text((MARGIN, y), line, font=body, fill=Palette.INK, anchor="ls")
@@ -342,7 +367,7 @@ def render_card(bands, out_path, winner_index=None, name=None, date_label=None, 
 
     draw.text((MARGIN, geo.height - MARGIN),
               "measured, not adjusted \u00B7 %d bands" % BAND_COUNT,
-              font=_font(TEXT_FONT, FOOTER_SIZE), fill=Palette.MUTED, anchor="ls")
+              font=_font(TEXT_FONT, FOOTER_SIZE, BODY_VARIATIONS), fill=Palette.MUTED, anchor="ls")
 
     img.save(out_path, "PNG")
     return img
