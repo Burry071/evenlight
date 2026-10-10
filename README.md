@@ -33,7 +33,14 @@ index under it, the latest card, and a shutter that is never disabled at any hou
 
 ![Card](docs/images/screen-card.png)
 
-**Card.** The rendered card, plus `raw photo` and `share`. `ui/CardScreen.kt`, `card/CardRenderer.kt`.
+**Card.** The rendered card, plus `raw photo` and `share`. `ui/CardScreen.kt`, `card/CardRenderer.kt`. This
+screenshot is the one image here that predates a fix: it was captured before the field-draw change in `fa65f73`,
+so its colour field still carries the ~75% coverage that commit removes. The two standalone cards further down are
+rendered after it, and their field rows measure exactly the blend.
+
+**Read the pixels before you read anything else in this file.** All five screens above come from the emulator's
+synthetic camera scene, not from a sky, and the two cards further down are rendered from records of that same scene.
+There is no real evening in this repository.
 
 ![Stack](docs/images/screen-stack.png)
 
@@ -44,8 +51,7 @@ index under it, the latest card, and a shutter that is never disabled at any hou
 **Setup.** A name and two numbers. Nothing is looked up and nothing is fetched, because nothing can be.
 `ui/SetupScreen.kt`, `data/Settings.kt`.
 
-**Read the pixels before you read anything else in this file.** All five screens and both cards above come from the
-emulator's synthetic camera scene, not from a sky. There is no real evening in this repository. The app has never
+**Every screen here is a synthetic scene, and both cards are drawn from records of it.** The app has never
 been pointed at a balcony, and there is deliberately no strip of cards here presented as a run of evenings. They are
 not one continuous session, either: the two numbers in the Setup fields are the example that screen's own hint
 prints, so they are not the pair that produces the sunset time the other four show.
@@ -57,19 +63,27 @@ download a gigabyte to check the claim.
 
 ```bash
 python tools/python/skycard.py photo.jpg -o card.png --print-json
+python tools/python/skycard.py --from-record docs/data/wording-sample/2026-10-10-attempt-5.json -o card.png
 ```
 
-It prints the eight bands, which band won, and the name, then writes a 1080x1440 card. Needs Python with Pillow
+The second line re-derives a card from a record the app already filed - which band won, the name, the wording, the
+date, the neighbours - so the two card images in this repository are things you can reproduce rather than things you
+have to take on trust. It is also the check that found the bug the last commit in this branch fixes: the app used to
+paint the field with 893 anti-aliased hairlines, and a hairline does not cover the row it names, so every published
+card was 25% washed toward the card surface while the maths was blameless.
+
+The first line prints the eight bands, which band won, and the name, then writes a 1080x1440 card. Needs Python with Pillow
 and nothing else. Timed as whole processes on my box, two runs each: 0.27 s and 0.33 s for a 128x96 fixture, 4.7 s
-and 6.1 s for a 4032x3024 JPEG at 2 MB. That second file is a synthetic gradient with noise in it, not a photograph,
+and 6.1 s for a 4032x3024 JPEG at 2 MB - a file that is not committed here, so that pair is my measurement rather than
+yours to check. That second file is a synthetic gradient with noise in it, not a photograph,
 and the gap between its two runs is why both numbers are there instead of one.
 
-The two implementations are tested against the same four PNG goldens in `fixtures/`, pinned by
+The two implementations are tested against the same five PNG goldens in `fixtures/`, pinned by
 `core/src/test/kotlin/com/burry071/evenlight/core/FixtureEquivalenceTest.kt` and mirrored by
 `tools/python/test_skycard.py`, so agreement is transitive and neither language can drift without a failure:
 
 ```bash
-python tools/python/test_skycard.py -v      # 13 tests
+python tools/python/test_skycard.py -v      # 20 tests
 ```
 
 ## The measurement is the code, not a description of it
@@ -190,8 +204,10 @@ that half is my measurement, and this repository is honest enough to say which h
 
 What is in it is `docs/data/wording-sample/three-timed-shots.txt`: three shots on the shipping build, fired about a
 minute apart, each with the time its record first appeared and the time it was written last. The pre-model record
-write lands 0.13-2.8 s after the capture tap and the model's rewrite 11.3-21.4 s after that write, so a second shot
-twelve seconds later arrives while the first call is still inside the engine. One engine, two callers.
+write lands 0.13-2.8 s after the capture tap and the final write 11.3-21.4 s after that write, so a second shot
+twelve seconds later arrives while the first call is still inside the engine. Two of those three finals are the model's
+own accepted lines (24.2 s and 14.3 s after the tap); the fastest, 12.4 s, is a rejected line, so what landed that
+fast was the template write. One engine, two callers.
 
 Two things follow, and both are in the open rather than in a footnote. `withTimeoutOrNull` around a blocking native
 call bounds nothing: measured on the same emulator, a call that ran 10.5 s still delivered its line past the 10 s
@@ -209,6 +225,11 @@ have published without looking.
 
 ![A card whose line claims stars in a scene that has none](docs/images/card-2026-10-10.png)
 
+That card is reproducible: `python tools/python/skycard.py --from-record
+docs/data/wording-sample/2026-10-10-attempt-5.json -o card.png` draws it from the record the app filed, and its 797
+visible field rows measure exactly `blendOf(bands, fieldBlend(y))` - the claim two reviews could not reproduce from
+the images the repo used to ship.
+
 The model wrote `the stars shimmered beneath an ash-lit sky.` There are no stars in that scene and the record
 measures none; the only facts in this pipeline are eight colours and one computed altitude. The gate checks form,
 not truth, and it can only check form. So look at what the model could not do: the name `ash`, the eight bands,
@@ -220,15 +241,20 @@ so that date's card carries the template line the fallback writes:
 
 ![A card using the template fallback](docs/images/card-2026-10-09.png)
 
+That one comes from `python tools/python/skycard.py --from-record
+docs/data/wording-sample/2026-10-09-attempt-14.json -o card.png`.
+
 ## The costs, before you discover them
 
 All timings in this section are from an x86_64 API-35 emulator (1080x2340 @ 440 dpi, 3,048,052 kB `MemTotal`).
 **The target device is unmeasured.** I am not going to quote a phone I did not read, and I am not going to repeat
 the number I remembered about it instead.
 
-- The debug APK is 61,350,388 bytes (58.5 MiB) and contains zero model weights. That is the LiteRT-LM library's
-  native code, compiled for four ABIs. Read it as "about 58.5 MiB": two builds of this same tree, half an hour
-  apart with no source change between them, came out 62 bytes apart.
+- The debug APK at this commit is 61,231,992 bytes (58.4 MiB) and contains zero model weights. That is the
+  LiteRT-LM library's native code, compiled for four ABIs. Read it as "about 58.4 MiB": the build before the final
+  fix round measured 61,350,388 bytes, 118,396 bytes larger, and two builds of one tree half an hour apart with no
+  source change between them came out 62 bytes apart. I have not split that difference up, so I am not going to
+  explain it here.
 - The model file is 584,417,280 bytes and it is not in this repository: GitHub's hard per-file limit is 100 MB, so
   it cannot be. `models/GET_MODEL.md` has the URL, the filename, the byte size, the sha256, and the one thing you
   have to do in a browser yourself.
@@ -243,7 +269,7 @@ the number I remembered about it instead.
 - Two variable fonts are bundled, 554 KB, with their OFL texts in `LICENSES/`. Android cannot address a weight axis
   through the API people expect, so the variation is pinned in `<font-family>` XML under `app/src/main/res/font/`
   and loaded through `ResourcesCompat`.
-- Test counts on this host: 87 Kotlin core tests, 39 app tests, 13 Python tests.
+- Test counts on this host: 89 Kotlin core tests, 48 app tests, 20 Python tests.
 
 ## Permissions
 
@@ -302,9 +328,11 @@ The holes, stated exactly:
   dark, so a dim sky produces a confident card.
 - **Nothing in a record says where you were.** No photo, no coordinates, no place name: those live in
   `settings.json` on the device, which is not committed and is not part of the sample. That is a claim about
-  records, not about this repository: the design spec and the plan both name the coordinate pair the sunset
-  constants were computed against, and `SunWindowTest.kt` and `StoreTest.kt` use that pair as fixture data. The
-  screenshots do not carry it - the Setup fields show the example from their own hint.
+  records, not about this repository, and the repository itself is the leakier place: the coordinate pair the sunset
+  constants were computed against appears in the design spec, in the plan, in `SunWindowTest.kt` and `StoreTest.kt` as
+  fixture data, in a KDoc comment in shipped `:core` (`SunWindow.kt`), and in the mockup HTML and its PNG; a city is
+  named in two main-source comments (`EvenlightController.kt`, `EvenlightNav.kt`). The screenshots do not carry it -
+  the Setup fields show the example from their own hint.
 - **The visible gaps are not visible in any image here.** The stack screenshot says `2 evenings · 0 holes`, because
   the two synthetic evenings are on consecutive days. The hole logic is `ui/StackDays.kt` and it is covered by
   `StackDaysTest`, not by a picture.
@@ -315,12 +343,13 @@ The holes, stated exactly:
 
 You need JDK 17 or newer, an Android SDK with API 35, and Gradle 8.8. `gradle/wrapper` is not committed in this
 repository - a known gap I did not get to - so there is no `./gradlew`; use your own Gradle. The app installs on
-Android 8.1 and up (`minSdk = 27`).
+Android 8.1 and up (`minSdk = 27`) and the manifest requires a camera device, so it will not install on a
+device without one.
 
 ```bash
 export ANDROID_HOME=/path/to/Android/Sdk     # or create local.properties with sdk.dir=...
 gradle :app:assembleDebug                    # first run needs network for dependencies
-gradle :core:test :app:testDebugUnitTest     # 87 + 39 tests
+gradle :core:test :app:testDebugUnitTest     # 89 + 48 tests
 gradle :app:installDebug                     # or: adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 

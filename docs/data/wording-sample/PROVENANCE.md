@@ -1,8 +1,14 @@
 # The 19 shots behind the wording numbers
 
 These are real `EveningRecord` files, dumped from the app's own data directory with
-`adb pull /data/com.burry071.evenlight/files/evenlight/records`. Every failure rate the README and the DEV post
-publishes is arithmetic over exactly these files, so a reader can recount them instead of taking my word:
+
+```
+adb exec-out "run-as com.burry071.evenlight tar c files/evenlight" > evenlight.tar
+```
+
+Plain `adb pull` cannot read an app-private directory, which is why the route goes through `run-as`. Every
+failure rate the README and the DEV post publishes is arithmetic over exactly these files, so a reader can
+recount them instead of taking my word:
 
 ```
 python - <<'PY'
@@ -48,8 +54,10 @@ these files - the coordinates and the place live only in `settings.json` on the 
 
 `three-timed-shots.txt` is the console output of three shots fired about a minute apart on the build that ships,
 read off the device while it ran. Each line gives the record's first write and its final write after the wording
-pass, so the model's line lands 21.4 s, 11.3 s and 14.2 s after the record existed, and 24.2 s, 12.4 s and 14.3 s
-after the tap. Nothing else in this set has second resolution.
+pass, so the final write lands 21.4 s, 11.3 s and 14.2 s after the record existed, and 24.2 s, 12.4 s and 14.3 s
+after the tap. Two of those three are the model's own lines (shots 1 and 3, 24.2 s and 14.3 s after the tap); the
+fastest one, shot 2 at 12.4 s, is a rejected line, so what landed at that speed was the template write, not a model
+answer. Nothing else in this set has second resolution.
 
 What a reader *can* recount from the JSON is the minute-resolution pattern behind the seven silences, because every
 record carries `shutter` to the minute:

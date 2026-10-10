@@ -143,7 +143,7 @@ the source of truth and the plan quotes its values rather than restating them al
 
 ## 7. The model — what it is for, decided from measurement
 
-Three probes, all run before any product code.
+Five probes, all run before any product code.
 
 | design | mechanism | result |
 |---|---|---|
@@ -168,7 +168,10 @@ line from a name it is handed.** It may not pick, rank, order, or measure.
 lowercase line of 4–8 words that must contain the chosen name verbatim.
 **Verifier, in order:** reject if the line contains `[0-9]`, `#`, `<`, `{`, `(`, a newline, more than 8
 words, or if the chosen name is absent from it. On rejection → template line, and `wording_rejected++`.
-The card still renders. **The README reports `wording_rejected/wording_total` as a result, not a footnote** —
+The card still renders. **The README reports the wording rates as a result, not a footnote** —
+(v2.1 note, 2026-10-10: the shipped README reports the counts split by provenance rather than as one
+`wording_rejected/wording_total` fraction, and says why at its own §on the wording gate. This instruction is
+superseded by that; the decision it was protecting — that the rate is published, not buried — stands.)
 a rejection rate on a 1B model is a real finding about small models and is the honest version of "AI writes
 your journal".
 

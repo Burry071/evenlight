@@ -64,8 +64,9 @@ Write one line of four to eight words that contains the word brassy. Do not use 
 colour that is not listed.
 ```
 
-The system prompt is one sentence about what it may do, plus a ban on digits, brackets and newlines. Then a verifier
-reads the reply. It rejects the line if the reply is not lowercase, contains a digit, is more than eight words or
+The system prompt started as one sentence about what it may do, plus a ban on digits, brackets and newlines, and the
+verifier that read the reply had the same shape; both halves turned out wrong and both were rewritten, the prompt into
+an allowlist-shaped ask and the gate into the character set below. Then a verifier reads the reply. It rejects the line if the reply is not lowercase, contains a digit, is more than eight words or
 fewer than four, or is missing the word it was given. On rejection, the card uses a template line, `brassy light,
 measured from this sky`, and a counter increments. The card still renders.
 
@@ -107,7 +108,7 @@ all seven as `wording_source: "none"`, which in my schema meant "there is no mod
 on the device. The field could not tell "never consulted" from "asked and got nothing," so any rate built on it was
 uncomputable, and it was wrong in the flattering direction: a model that failed looked like a model that was absent.
 There is a fourth value now, `"no-answer"`, and that makes the two failures separable instead of one share of
-evenings: **did it answer** (12 of 19) and **was that answer valid** (7 of the 12 under the gate that ships - the
+evenings: **did it answer** (12 of 19) and **was that answer valid** (7 of the 12 answers pass today's gate - the
 other five are the four the gate rejected plus the markdown line the old gate wrongly passed). One number about
 latency, one about judgement. Both are recountable from the record files, and the script in
 `docs/data/wording-sample/PROVENANCE.md` prints the 7.
@@ -121,8 +122,10 @@ not in the repo, because I deleted those records when I put the emulator back th
 as my measurement rather than something you can recount.
 
 What is in the repo is `docs/data/wording-sample/three-timed-shots.txt`: three shots on the current build, fired
-about a minute apart, each with the time its record first appeared and the time it was written last. The model's line
-lands between 12.4 s and 24.2 s after the shutter tap, which is 11.3 to 21.4 s after the record already existed. So a
+about a minute apart, each with the time its record first appeared and the time it was written last. The final write
+lands between 12.4 s and 24.2 s after the shutter tap, which is 11.3 to 21.4 s after the record already existed. Two
+of the three are model lines (24.2 s and 14.3 s after the tap); the 12.4 s one is a rejected line, so the fastest
+write in the set was the template, not an answer. So a
 shot taken twelve seconds later arrives while the previous call is still inside the engine. The seven no-answers are
 not a model that refuses. They are one engine and two callers, and the reason the closing path now holds a guard
 across the whole native call rather than across the timeout.
@@ -159,7 +162,7 @@ RSS 1,269 MB, both from the emulator.
 ## How the colour is measured, since that is where the bugs were
 
 The photo is resampled to 64 pixels wide with a hand-written bilinear filter, split into eight bands, and each band
-is averaged per channel. Mean luminance uses the sRGB linearisation, so a value below 0.03928 divides by 12.92 and
+is averaged per channel. Mean luminance uses the sRGB linearisation, so a value at or below 0.03928 divides by 12.92 and
 anything above it goes through a power of 2.4. The winning band is the one with the largest gap between its biggest
 and smallest channel; a tie goes to the brighter band.
 
@@ -179,8 +182,8 @@ identity. That is why the odd-sized fixture exists.
 That disagreement showed up as 13,161 differing `(row, band-pair, channel)` outcomes when the blend formula was
 brute-forced instead of rendered - the kind of thing that looks like a rendering bug until you notice the two sides
 round exact `.5` ties opposite ways (row 57, the pair 0 and 47: one language says 0, the other says 1). That sweep
-was a throwaway probe and its script is not in this repository, so this is the one number in this post you cannot
-recompute. What you can check is the fix: `fieldBlend` returns a `Double`, and no cast quantises it on the way to a
+was a throwaway probe and its script is not in this repository, so this is the one number in the post whose derivation
+script you cannot even look at - the emulator timings above are equally yours to take on trust. What you can check is the fix: `fieldBlend` returns a `Double`, and no cast quantises it on the way to a
 pixel. Canonical precision is now 64-bit on both sides, and the Python port is told never to touch
 `numpy.float32`.
 
@@ -197,12 +200,12 @@ python tools/python/skycard.py photo.jpg -o card.png --print-json
 ```
 
 It prints the eight bands, which band won, and the name, then writes a card. Timed as whole processes on this box,
-two runs each: 0.27 s and 0.33 s for a 128x96 fixture, 4.7 s and 6.1 s for a 4032x3024 JPEG at 2 MB. That second file
-is a synthetic gradient with noise in it at the resolution a common phone shoots at, not a photograph - nothing in
-this repo is a real sky yet - and the spread between its two runs is why I give both numbers instead of a confident
+two runs each: 0.27 s and 0.33 s for a 128x96 fixture, 4.7 s and 6.1 s for a 4032x3024 JPEG at 2 MB (not committed - that second file
+is a synthetic gradient with noise in it at the resolution a common phone shoots at, not a photograph, and nothing in
+this repo is a real sky yet), and the spread between its two runs is why I give both numbers instead of a confident
 one. The band arithmetic is the same arithmetic as the Kotlin, line for line, and a test on both sides asserts
-against the same four PNG fixtures, so agreement is transitive and neither language can drift without a failure.
-87 Kotlin core tests, 39 app tests, 13 Python tests.
+against the same five PNG fixtures, so agreement is transitive and neither language can drift without a failure.
+89 Kotlin core tests, 48 app tests, 20 Python tests.
 
 ## The costs, stated before you discover them
 
@@ -218,9 +221,10 @@ against the same four PNG fixtures, so agreement is transitive and neither langu
   10 s give-up marker belongs re-checked there too, because on the emulator it turned out to bound nothing:
   `withTimeoutOrNull` cannot interrupt a blocking native call, and a call that ran 10.5 s still delivered its line
   past the marker.
-- The debug APK is 61,350,388 bytes (58.5 MiB) with zero model weights in it. That is the inference library's native
-  code, compiled for four ABIs. Two builds of the same tree half an hour apart came out 62 bytes apart, so read the
-  figure as "about 58.5 MiB".
+- The debug APK at this commit is 61,231,992 bytes (58.4 MiB) with zero model weights in it. That is the inference
+  library's native code, compiled for four ABIs. The build before the last round of fixes was 61,350,388 bytes, and
+  two builds of one tree half an hour apart came out 62 bytes apart, so read the figure as "about 58.4 MiB" rather
+  than as a checksum.
 - Two variable fonts are bundled, 554 KB. Android cannot address a weight axis through the API people expect
   (`fontFeatureSettings` is for OpenType features, and `wght` is not one), so the variation is pinned in a
   `<font-family>` XML and loaded through `ResourcesCompat`, because `Resources.getFont` throws on a family file.
@@ -247,7 +251,7 @@ set is still exactly `{CAMERA}`. Nothing leaves the phone by itself, which the m
 not my intention.
 
 There is no real evening in this repo yet. Every card and every record I published came from an emulator pointed at
-its own synthetic scene, and the four PNGs under `fixtures/` are drawn, not photographed. The first sky this app
+its own synthetic scene, and the five PNGs under `fixtures/` are drawn, not photographed. The first sky this app
 measures is the one outside my window, and if I do not shoot it, the stack will show that too - the holes are the
 part of the design that survives my own laziness.
 
