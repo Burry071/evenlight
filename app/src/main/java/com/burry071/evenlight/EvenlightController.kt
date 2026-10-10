@@ -154,6 +154,13 @@ class EvenlightController(
             val consulted = engine.ensure()
             val candidate = if (consulted) engine.line(filed.name, filed.bandsHex, filed.sunAltitudeDeg) else null
             val finalRecord = applyWording(filed, candidate, filed.name, consulted)
+            // The reveal no longer waits for this call, so the shutter is live while it runs: a second shot filed
+            // inside the model call (the README measures 1,080 / 1,247 / 3,502 ms per line) has already written
+            // today's card and its own record. Rewriting over them from the FIRST shot's answer would leave
+            // today's PNG showing an earlier attempt's bands and line - permanently, if that second attempt's own
+            // upgrade turns out to be provenance-only and so never re-renders. Newest attempt wins the card; the
+            // earlier record keeps its own (date, attempt) file and its own honest line.
+            if (store.attemptsFor(filed.date) > filed.attempt) return@withContext filed
             if (finalRecord != filed) {
                 if (finalRecord.wording != filed.wording) {
                     // Render into memory, then card, then record - the same order the pre-split shoot() kept.

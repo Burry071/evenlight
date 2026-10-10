@@ -9,6 +9,14 @@ import java.nio.file.StandardCopyOption
 import java.time.LocalDateTime
 
 class Store(val root: File) {
+    companion object {
+        /**
+         * The name every crash-residual atomic write carries. `readRecords` deliberately filters nothing else -
+         * a file that decodes is a record - but a temp stranded between its write and its rename decodes as a
+         * full duplicate of the evening it was replacing, and would show up as a phantom row.
+         */
+        const val TMP_PREFIX = "tmp-"
+    }
     private val base = File(root, "evenlight").apply { mkdirs() }
     private val raw = File(base, "raw").apply { mkdirs() }
     private val cards = File(base, "cards").apply { mkdirs() }
@@ -22,11 +30,12 @@ class Store(val root: File) {
      * exists to prevent. Writing the bytes to a sibling temp file and renaming over the target makes the swap a
      * single atomic step on the same filesystem, so the reader sees either the whole old file or the whole new one
      * and never a mix. The temp is prefixed and suffixed so it never matches the patterns the readers key on
-     * (`attemptsFor`'s `$date-attempt-` prefix, `corruptRecords`'s `.json` suffix) even if a crash does leave one.
+     * (`attemptsFor`'s `$date-attempt-` prefix, `corruptRecords`'s `.json` suffix) and `readRecords` skips the
+     * prefix by name, so even a kill between the write and the rename cannot show up as a phantom evening.
      * On any failure the temp is deleted so a botched write cannot strand a stray file beside the good one.
      */
     private fun atomicWrite(target: File, content: ByteArray) {
-        val tmp = File(target.parentFile, "tmp-${target.name}.tmp")
+        val tmp = File(target.parentFile, "$TMP_PREFIX${target.name}.tmp")
         try {
             tmp.writeBytes(content)
             try {
@@ -92,7 +101,8 @@ class Store(val root: File) {
     }
 
     fun readRecords(): List<EveningRecord> =
-        records.listFiles()?.mapNotNull { f -> decodeOrNull(f)?.let { f to it } }
+        records.listFiles()?.filterNot { it.name.startsWith(TMP_PREFIX) }
+            ?.mapNotNull { f -> decodeOrNull(f)?.let { f to it } }
             ?.sortedWith(compareBy({ orderOf(it.first.name).first }, { orderOf(it.first.name).second }, { it.first.name }))
             ?.map { it.second } ?: emptyList()
 

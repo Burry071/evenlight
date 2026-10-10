@@ -33,8 +33,11 @@ class EngineHolder(private val context: Context) : WordingEngine {
      *    `close()` on that engine is the use-after-free risk you reach by pressing the shutter; so on timeout the
      *    engine is left alone (one leaked native handle is the cheaper side of that trade);
      *  - re-initialising a 1.2 GB model at every evening's shot after it already failed once is the cost the latch
-     *    prevents. The holder is rebuilt by `forDevice` on a settings save, which re-arms it - the rare path, and
-     *    a fresh holder then starts from a clean slate, as the brief's per-controller ownership implies.
+     *    prevents. Nothing re-arms it: a settings save used to rebuild the holder and clear the latch, and it no
+     *    longer does (one engine per controller, because the engine is not settings-dependent and dropping the
+     *    holder while a native call is in flight leaked a second 1.269 GB engine). So after a timed-out init the
+     *    model is off for the rest of the process, and the card keeps the template line. That is the trade this
+     *    latch makes on purpose - a night without a model line, not a use-after-free.
      */
     private var timedOut = false
 

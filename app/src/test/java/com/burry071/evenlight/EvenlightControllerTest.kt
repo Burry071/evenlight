@@ -151,6 +151,39 @@ class EvenlightControllerTest {
         assertEquals(1, fx.store.attemptsFor("2026-10-08"))
     }
 
+    @Test fun anUpgradeThatLandsAfterANewerShotLeavesTheNewerCardAlone() = runBlocking {
+        // The reveal no longer waits for the model, so the shutter is live while the upgrade runs: a second shot
+        // can be filed while the first is still inside the engine, and the README measures that inside at
+        // 1,080 / 1,247 / 3,502 ms per line - long enough for a re-press. If the late answer then rewrote the
+        // day's card, today's PNG would carry the earlier attempt's bands and line - permanently, whenever the
+        // newer attempt's own upgrade is provenance-only and never re-renders.
+        val fx = Fixture()
+        val engine = FakeEngine(preOpen = false)
+        val controller = controller(fx, engine)
+
+        val first = controller.fileShot().getOrThrow()
+        assertEquals(1, first.attempt)
+        val card = fx.store.cardFile("2026-10-08")
+        assertArrayEquals(byteArrayOf('c'.code.toByte(), 1), card.readBytes())
+
+        val upgrade = launch { controller.upgradeWording(first) }
+        engine.started.await()
+
+        val second = controller.fileShot().getOrThrow()
+        assertEquals(2, second.attempt)
+        assertArrayEquals(byteArrayOf('c'.code.toByte(), 2), card.readBytes())
+
+        engine.gate.complete(Unit)
+        upgrade.join()
+
+        assertArrayEquals(byteArrayOf('c'.code.toByte(), 2), card.readBytes())
+        val records = fx.store.readRecords()
+        assertEquals(2, records.size)
+        assertEquals("none", records.first { it.attempt == 1 }.wordingSource)
+        assertEquals("none", records.first { it.attempt == 2 }.wordingSource)
+        assertEquals(2, fx.cardCalls.size)
+    }
+
     @Test fun aProvenanceOnlyUpgradeRewritesTheRecordWithoutRedrawingTheCard() = runBlocking {
         // The wording on a card is drawn text, so a provenance change that leaves the SAME template line must
         // not pay for a re-render - and a no-answer evening records a fact the card cannot show anyway.
