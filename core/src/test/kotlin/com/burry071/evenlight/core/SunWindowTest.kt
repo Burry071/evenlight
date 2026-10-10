@@ -75,4 +75,18 @@ class SunWindowTest {
         assertFalse(SunWindow.inSunsetWindow(s.minusMinutes(21), home))
         assertFalse(SunWindow.inSunsetWindow(s.plusMinutes(21), home))
     }
+
+    @Test fun sunsetUsesTheRequestedDatesOwnDstOffset() {
+        // Finding 2.6. Both dates come from a full sweep of 2026 in the U.S. Eastern zone: they are the dates
+        // where the wrong evaluation hour crosses a rounding boundary, so the minute itself moves. 2026-02-05
+        // sits on winter time (-5) and reads 17:19 computed from its own offset but 17:18 from the summer one;
+        // 2026-07-19 sits on summer time (-4) and reads 20:24 from its own but 20:23 from the winter one.
+        // Whatever offset today happens to carry, a sunset() that read Instant.now() gets ONE of these two
+        // wrong, so the test has teeth on every run day - and the fixed function is a pure function of the
+        // date and zone again, which is the claim the no-network argument rests on.
+        val ny = ZoneId.of("America/New_York")
+        val east = GeoPoint(40.71, -74.01)
+        assertEquals(LocalDateTime.of(2026, 2, 5, 17, 19).atZone(ny), SunWindow.sunset(LocalDate.of(2026, 2, 5), east, ny))
+        assertEquals(LocalDateTime.of(2026, 7, 19, 20, 24).atZone(ny), SunWindow.sunset(LocalDate.of(2026, 7, 19), east, ny))
+    }
 }

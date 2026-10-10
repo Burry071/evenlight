@@ -59,6 +59,11 @@ object SunWindow {
 
     /** Minutes from 00:00 UTC. Evaluated once at local noon; the residual is the bias above. */
     fun sunsetUtcMinutes(date: LocalDate, g: GeoPoint, tzOffsetHours: Double): Double {
+        // Finding 2.8, recorded so a reader in a +05:30 zone does not chase it: toLong() truncates, and a
+        // half-hour zone does reach sunset() with a fractional value (19800 / 3600.0 = 5.5). What shifts is only
+        // WHERE the solar series is evaluated - "local noon" lands up to 45 minutes off - which reviewer
+        // measurements put at under 0.2 minutes of sunset, inside the documented -1.2 min bias. The minutes
+        // themselves are computed from the longitude, not this clock, so the truncate costs nothing else.
         val noonUtc = LocalDateTime.of(date, LocalTime.NOON).minusHours(tzOffsetHours.toLong())
         val (decl, eqTime) = solar(julianDay(noonUtc))
         val lat = Math.toRadians(g.latDeg)
@@ -68,7 +73,16 @@ object SunWindow {
     }
 
     fun sunset(date: LocalDate, g: GeoPoint, zone: ZoneId): ZonedDateTime {
-        val offset = zone.rules.getOffset(java.time.Instant.now()).totalSeconds / 3600.0
+        // Finding 2.6: this used to read zone.rules.getOffset(Instant.now()) - today's offset applied to any
+        // date handed in - which both broke the purity claim above (the same call straddling a DST transition
+        // answered differently depending on when you asked) and evaluated the solar series at the wrong hour
+        // for the far side of one. The offset belongs to the requested date: atStartOfDay(zone) is the
+        // reference point Java gives for a date's own offset, and it survives a midnight DST transition
+        // (America/Havana's, say) by skipping to the first valid time. The effect on the minute is small -
+        // the two offsets differ only in WHERE noonUtc is evaluated - but on the dates where that shift
+        // crosses a rounding boundary it flips the displayed minute, and SunWindowTest pins two of those
+        // dates, one either side of a US transition, so the wrong-offset path can never pass both.
+        val offset = zone.rules.getOffset(date.atStartOfDay(zone).toInstant()).totalSeconds / 3600.0
         val minutesUtc = sunsetUtcMinutes(date, g, offset)
         return LocalDateTime.of(date, LocalTime.MIDNIGHT)
             .plusMinutes(minutesUtc.roundToInt().toLong())

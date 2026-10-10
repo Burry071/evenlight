@@ -19,7 +19,9 @@ object Verifier {
         if (line.any { it == '\n' || it == '\r' }) return Verdict.Reject("multiline")
         if (line.any { it.isDigit() }) return Verdict.Reject("digit")
         // Uppercase outranks the character set: 'B' is not in `allowed` either, but "not-lowercase" is
-        // the truer reason, and it keeps that count separate from the markup count the README publishes.
+        // the truer reason. The reason exists for the tests and for diagnostics only - the evening record
+        // stores a single wording_rejected boolean and nothing on the shipped side reads these strings back,
+        // so the categories are kept distinct here for whoever does have to tell them apart.
         if (line != line.lowercase()) return Verdict.Reject("not-lowercase")
         if (line.any { it !in allowed }) return Verdict.Reject("markup")
         // Two different splits, on purpose. `words` counts whitespace runs, which is what "4-8 words" means

@@ -44,10 +44,16 @@ class BandSamplerTest {
         assertEquals(Pixels.relativeLuminance(c), bands.meanLuminance, 1e-9)
     }
 
-    @Test fun bilinearDownscaleOfAHalfBlackHalfWhiteRowIsTheMidpoint() {
+    @Test fun bilinearDownscaleOfAHalfBlackHalfAlmostWhiteRowRoundsTheTieHalfUp() {
+        // Finding 2.1: the old version of this test averaged 0 and 255, a mean of exactly 127.5 - the one .5
+        // value where half-up and half-even AGREE (128 is even), so it looked like a tie assertion while pinning
+        // nothing. 253 puts the band mean at 32 * 253 / 64 = 126.5: half-up gives 127, half-even gives 126. The
+        // bilinear pass itself cannot land on the tie here (fx = 2dx + 0.5 pairs whole columns, so every small
+        // pixel is 0 or 253); the tie is the band average, which is where Pixels.roundHalfUp decides.
+        // test_skycard.py mirrors this exact frame so the tie direction stays a cross-language contract.
         val w = 128
-        val px = IntArray(2 * w) { x -> val col = x % w; if (col < w / 2) Pixels.rgb(0, 0, 0) else Pixels.rgb(255, 255, 255) }
-        assertEquals(Pixels.rgb(128, 128, 128), BandSampler.sample(px, w, 2).ordered[0])
+        val px = IntArray(2 * w) { x -> val col = x % w; if (col < w / 2) Pixels.rgb(0, 0, 0) else Pixels.rgb(253, 253, 253) }
+        assertEquals(Pixels.rgb(127, 127, 127), BandSampler.sample(px, w, 2).ordered[0])
     }
 
     @Test fun meanLuminanceIsStrictlyBetweenTheBandExtremes() {

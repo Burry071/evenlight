@@ -45,6 +45,22 @@ class JsonTest {
         assertEquals(Json.Num(1.5), Json.tryParse("1.5"))
     }
 
+    @Test fun rejectsLeadingZerosAndTrailingPointsTheWayPythonsReaderDoes() {
+        // Finding 2.8, same argument as rejectsAPlusPrefixedNumber: the file's other reader is json.load, and
+        // it refuses both shapes - `json.loads("01")` and `json.loads("1.")` raise - while the old scan
+        // accepted them ("012" even parsed as 12). `0` itself, `0.5`, `0e1` and `10` stay legal in both
+        // languages, so the tightening must not cost those.
+        assertNull(Json.tryParse("01"))
+        assertNull(Json.tryParse("-07"))
+        assertNull(Json.tryParse("1."))
+        assertNull(Json.tryParse("{\"attempt\":02}"))
+        assertNull(Json.tryParse("{\"mean_luminance\":0.117.}"))
+        assertEquals(Json.Num(0.0), Json.tryParse("0"))
+        assertEquals(Json.Num(0.5), Json.tryParse("0.5"))
+        assertEquals(Json.Num(0.0), Json.tryParse("0e1"))
+        assertEquals(Json.Num(10.0), Json.tryParse("10"))
+    }
+
     @Test fun controlCharactersSurviveARoundTrip() {
         // Python's strict reader refuses a raw control character inside a string, so escaping them is what
         // keeps these files loadable. Named escapes own newline/tab/return, which leaves the four-hex-digit

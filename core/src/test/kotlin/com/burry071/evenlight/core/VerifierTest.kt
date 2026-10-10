@@ -10,7 +10,11 @@ class VerifierTest {
     }
 
     @Test fun rejectsAnyDigit() {
-        assertTrue(Verifier.check("brassy light at 17 degrees", "brassy") is Verdict.Reject)
+        // Finding 2.4: digits are also outside the allowlist, so `is Verdict.Reject` stayed green after
+        // someone deleted this guard - the line just failed later, as "markup". This line otherwise passes
+        // every rule (five words, lowercase, carries the name), so only the digit guard can reject it, and
+        // asserting the reason is what keeps the category alive.
+        assertEquals(Verdict.Reject("digit"), Verifier.check("brassy light at 17 degrees", "brassy"))
     }
 
     @Test fun rejectsAHashSoHexCannotLeakOntoACard() {
@@ -33,7 +37,10 @@ class VerifierTest {
     }
 
     @Test fun rejectsMoreThanOneLine() {
-        assertTrue(Verifier.check("brassy light\nand then", "brassy") is Verdict.Reject)
+        // Finding 2.4, same shape as the digit case: a bare '\n' is outside the allowlist too, so the old
+        // `is Verdict.Reject` stayed green with the multiline guard deleted. Four words over two lines - the
+        // word rules pass and lowercase passes - so "multiline" is the only reason this can reject.
+        assertEquals(Verdict.Reject("multiline"), Verifier.check("brassy light\nand then", "brassy"))
     }
 
     @Test fun rejectsMoreThanEightWords() {

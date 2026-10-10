@@ -93,8 +93,18 @@ private class Parser(private val s: String) {
         // exponent (`1e+5`) - so `+1.5` would parse, while Python's json.load rejects it. A number must begin
         // with a digit or a minus, and this says so before the permissive scan runs.
         require(i < s.length && s[i].isDigit()) { "number must start with a digit" }
+        // Finding 2.8, the same agreement argument in its two remaining shapes. `01` parses here (and Python's
+        // json.load refuses it), so a zero may only be followed by a fraction, an exponent or the end - and
+        // `1.` (also refused there, also consumed whole by the scan below) is a trailing point, not a number.
+        // Both checks run before the permissive scan so the scan itself stays one line.
+        if (s[i] == '0') {
+            i++
+            require(i >= s.length || !s[i].isDigit()) { "leading zero before a non-zero digit" }
+        }
         while (i < s.length && (s[i].isDigit() || s[i] in ".eE+-")) i++
-        return Json.Num(s.substring(start, i).toDouble())
+        val text = s.substring(start, i)
+        require(!text.endsWith(".")) { "number ends with a decimal point" }
+        return Json.Num(text.toDouble())
     }
 
     private fun string(): String {

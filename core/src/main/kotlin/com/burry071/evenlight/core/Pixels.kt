@@ -36,7 +36,16 @@ object Pixels {
         return (t.substring(0, 2).toInt(16) shl 16) or (t.substring(2, 4).toInt(16) shl 8) or t.substring(4, 6).toInt(16)
     }
 
-    /** WCAG relative luminance, 0..1. Used only to pick a text colour - never to alter a colour. */
+    /**
+     * WCAG relative luminance, 0..1. Used only to pick a text colour - never to alter a colour.
+     *
+     * The one libm dependency in the cross-language contract lives here: pow(x, 2.4) is not exact in binary64,
+     * and the winner's tie-break compares this function's output for two colours whose luminances can differ by
+     * ~1e-15 (a review sweep found, e.g., (193,11,53) against (189,7,97) inside that margin), so on those pairs
+     * the tie direction rides on libm agreement between Kotlin's Double.pow and CPython's ** operator.
+     * Everything else in the contract - the band maths, the blend, the rounding - is exact in binary64; this
+     * sentence is the note that says where "exact" stops covering.
+     */
     fun relativeLuminance(c: Int): Double {
         fun lin(v: Int): Double {
             val s = v / 255.0
