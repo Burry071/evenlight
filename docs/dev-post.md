@@ -57,8 +57,18 @@ Python is so that a change to those numbers cannot pass in one language alone.
 
 ## Demo
 
-Five screens, in the order you meet them. Setup happens once: a place name and a pair of coordinates, with no
-location permission and no network to fetch either from.
+The loop end to end first, then every screen at full size. Five panels, in order:
+
+![Setup, Tonight, Shoot, Card and Stack, in that order](docs/images/screens-tour.gif)
+
+That animation and the single-image version of it (`docs/images/screens-sheet.png`) are drawn by
+`tools/python/make_screens.py` from the five committed screenshots, so neither is a hand-arranged collage. It is
+the same claim the Python port makes about the card's maths, applied to the pictures: a change to the source
+files regenerates them, and the sheet says on its own face that these are emulator panels, which is why the card
+in the fourth one reads a sun altitude of -63 degrees.
+
+Setup happens once: a place name and a pair of coordinates, with no location permission and no network to fetch
+either from.
 
 ![Setup: a place name and a pair of coordinates](docs/images/screen-setup.png)
 
