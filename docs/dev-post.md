@@ -1,7 +1,8 @@
 # Evenlight: I gave the AI the smallest job in the app, and measured why
 
 **Tagline:** one balcony, one sky, one card an evening.
-**Repo:** `Burry071/evenlight` (not pushed yet; the link lands when it is)
+**Repo:** [github.com/Burry071/evenlight](https://github.com/Burry071/evenlight) - public, 86 commits, first one
+2026-10-08 01:55 +0500, inside the entry window.
 **Hacktoberfest 2026, Week 1, theme "Touch Grass."**
 
 Every entry in this theme seems to be about getting people outside. Mine takes a photo of the sky from a place you
