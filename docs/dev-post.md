@@ -1,7 +1,7 @@
 # Evenlight: I gave the AI the smallest job in the app, and measured why
 
 **Tagline:** one balcony, one sky, one card an evening.
-**Repo:** [github.com/Burry071/evenlight](https://github.com/Burry071/evenlight) - public, 91 commits, first one
+**Repo:** [github.com/Burry071/evenlight](https://github.com/Burry071/evenlight) - public, 92 commits, first one
 2026-10-08 01:55 +0500, inside the entry window.
 **Hacktoberfest 2026, Week 1, theme "Touch Grass."**
 
@@ -281,8 +281,9 @@ The first line prints the eight bands, which band won, and the name, then writes
 the app filed from the JSON record it wrote, which is how you can check that the picture says what the measurement
 says rather than what I say about it. Timed as whole processes on this box,
 two runs each: 0.27 s and 0.33 s for a 128x96 fixture, 4.7 s and 6.1 s for a 4032x3024 JPEG at 2 MB (not committed - that second file
-is a synthetic gradient with noise in it at the resolution a common phone shoots at, not a photograph, and nothing in
-this repo is a real sky yet), and the spread between its two runs is why I give both numbers instead of a confident
+is a synthetic gradient with noise in it at the resolution a common phone shoots at, not a photograph - the one real
+sky in this repo is the phone's, photographed for the demo above), and the spread between its two runs is why I give
+both numbers instead of a confident
 one. The band arithmetic is the same arithmetic as the Kotlin, line for line, and a test on both sides asserts
 against the same five PNG fixtures, so agreement is transitive and neither language can drift without a failure.
 89 Kotlin core tests, 49 app tests, 20 Python tests.
