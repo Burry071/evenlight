@@ -58,8 +58,9 @@ adb shell "run-as com.burry071.evenlight cp /data/local/tmp/Gemma3-1B-IT_multi-p
 ```
 
 The app never reads anything outside its own directory, so a release build without `run-as` needs a different route
-to the same path. Placing the file is the whole setup: the engine is built lazily on the first shot after the file
-appears, and the holder is rebuilt when you save Settings.
+to the same path. Placing the file is the whole setup: `EngineHolder.ensure()` re-checks `modelFile.exists()` on
+every shot, so the first shot after the file lands is the one that builds the engine - no restart, and no settings
+save needed to pick it up.
 
 ## What it costs on disk
 

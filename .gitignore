@@ -19,6 +19,10 @@ captures/
 # is not a preference: the weights cannot be committed at all. models/GET_MODEL.md says how to fetch one.
 *.litertlm
 
+# Not this project's: a stray directory from another experiment on this machine, untracked since
+# 2026-10-07. Ignored rather than deleted so a broad `git add` can never swallow it.
+visual-coding-team-test/
+
 # Build caches the tooling writes into the repo root, none of them source.
 .kotlin/
 .pytest_cache/

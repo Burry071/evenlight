@@ -1,7 +1,9 @@
 # Evenlight — design spec (v2, sky card)
 
 **Date:** 2026-10-08 · **Status:** approved for implementation (user: "now write plan", 2026-10-08)
-**Target:** Hacktoberfest 2026 DEV Challenge Week 1, theme "Touch Grass". Closes 2026-10-11 23:59 PDT = **2026-10-12 06:59 PKT**.
+**Target:** Hacktoberfest 2026 DEV Challenge Week 1, theme "Touch Grass". Closes 2026-10-11 23:59 PDT =
+2026-10-12 06:59 UTC = **2026-10-12 11:59 PKT**. (This line said "06:59 PKT" until 2026-10-11: it mislabelled
+UTC as PKT and understated the window by six hours.)
 **Author:** built by the user (`Burry071`) with AI-agent assistance.
 
 > This replaces the 2026-10-07 v1 spec, which described a sky-*measuring instrument* with a laptop
