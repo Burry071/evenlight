@@ -1,8 +1,10 @@
 # Evenlight: I gave the AI the smallest job in the app, and measured why
 
 **Tagline:** one balcony, one sky, one card an evening.
-**Repo:** [github.com/Burry071/evenlight](https://github.com/Burry071/evenlight) - public, 92 commits, first one
+**Repo:** [github.com/Burry071/evenlight](https://github.com/Burry071/evenlight) - public, 93 commits, first one
 2026-10-08 01:55 +0500, inside the entry window.
+**Entry:** [dev.to/fahadyy/evenlight-i-gave-the-ai-the-smallest-job-in-the-app-and-measured-why-4d8o](https://dev.to/fahadyy/evenlight-i-gave-the-ai-the-smallest-job-in-the-app-and-measured-why-4d8o) -
+published 2026-10-11 under #devchallenge and #hf26challenge.
 **Hacktoberfest 2026, Week 1, theme "Touch Grass."**
 
 Every entry in this theme seems to be about getting people outside. Mine takes a photo of the sky from a place you
