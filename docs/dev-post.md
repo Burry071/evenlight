@@ -14,6 +14,30 @@ every measurement in this post, which is its own story below - found it was bad 
 smaller one. That decision is the spine of this post, and every number behind it is either in a file in the
 repo or labelled out loud as a measurement that is not.
 
+## How it gets anyone outside, and the feature I refused to build
+
+The template asks how this gets people off the screen and into the world, and the honest answer is narrower than
+the question. The app's only input is a photo the camera takes while you are holding it. There is no gallery import
+and no way to hand it an evening you did not stand under, so the artefact cannot exist unless somebody went outside
+and pointed a phone at the sky. That is the entire mechanism. It is a weak one, and I would rather describe it
+accurately than dress it up as a behaviour-change intervention.
+
+I was asked for a sunset notification and did not build one. The reason is arithmetic, not principle: a notification
+wants `POST_NOTIFICATIONS`, and the runtime permission set here is exactly `{CAMERA}` with a test asserting it.
+Evenlight's one distinctive claim is that it can see nothing but the photo you hand it - there is no `INTERNET`
+permission in the manifest, so the measurements cannot leave the phone even if the app wanted them to. Trading a
+verifiable fact for a nudge I would not personally obey is a bad deal at any time and a worse one the day before a
+deadline. The argument for the other side is real, though, so here it is: an app that never asks gets opened only
+when you happen to remember, and the stack in this repo has holes in it for exactly that reason.
+
+One claim I checked in the code rather than in the design doc, because it is the one that makes this more than a
+sunset app: the shutter is gated on nothing but `enabled = !busy`. No hour check, no sun-altitude check, no scene
+check. "Evening" in the UI describes what I use it for, not what it accepts. Point it at a garden at noon, at grass,
+at a wall, and it measures eight bands of whatever colour is actually there and names it from the same 35-word
+vocabulary. The only hard requirement is that you saved a place and a pair of coordinates once, because the card
+prints the sun's altitude - and the app refuses to file a card rather than print an altitude computed for the Gulf
+of Guinea.
+
 ## What the card is
 
 One photo, taken fresh by the camera. No gallery import, no presets, no saturation slider.
@@ -29,6 +53,43 @@ of the data.
 The card is 1080x1440 pixels and the colour on it is the colour that was measured: no filter, no preset, and the
 renderer's only colour input is the eight values. The reason I wrote a second implementation of the sampler in
 Python is so that a change to those numbers cannot pass in one language alone.
+
+## Demo
+
+Five screens, in the order you meet them. Setup happens once: a place name and a pair of coordinates, with no
+location permission and no network to fetch either from.
+
+![Setup: a place name and a pair of coordinates](docs/images/screen-setup.png)
+
+Tonight is one computed number, minutes until the sun goes down, from NOAA solar maths on the device:
+
+![Tonight: sunset time and this evening's ordinal](docs/images/screen-tonight.png)
+
+Shoot is one tap:
+
+![Shoot: the shutter, with sunset time beside it](docs/images/screen-shoot.png)
+
+Then the card, which is the whole artefact - eight measured bands, the name the matcher chose, the sun's altitude at
+the shutter minute, and the model's one line:
+
+![The rendered card](docs/images/screen-card.png)
+
+And the stack, oldest first, with a visible hole wherever an evening is missing:
+
+![The stack of evenings, with gaps left in](docs/images/screen-stack.png)
+
+Two cards the app actually filed, both reproducible from the JSON beside them:
+
+![A card whose line claims stars in a scene that has none](docs/images/card-2026-10-10.png)
+
+![A card using the template fallback](docs/images/card-2026-10-09.png)
+
+The app itself is not a link you can click. It is an APK you build from the repo
+(`gradle :app:assembleDebug`, which needs network on a first run for dependencies, then
+`adb install -r app/build/outputs/apk/debug/app-debug.apk`),
+61,231,992 bytes with no model weights inside it, and the weights are a separate 584 MB gated download whose terms
+you accept in your own browser. That is the one part of the demo I cannot hand you, and it is the reason the two
+paths below exist: the measurement is demonstrable without any of it.
 
 ## The measurement that decided the architecture
 
@@ -197,9 +258,12 @@ Nobody has to install an Android app, and nobody has to download a gigabyte of w
 
 ```bash
 python tools/python/skycard.py photo.jpg -o card.png --print-json
+python tools/python/skycard.py --from-record docs/data/wording-sample/2026-10-10-attempt-5.json -o card.png
 ```
 
-It prints the eight bands, which band won, and the name, then writes a card. Timed as whole processes on this box,
+The first line prints the eight bands, which band won, and the name, then writes a card. The second redraws the card
+the app filed from the JSON record it wrote, which is how you can check that the picture says what the measurement
+says rather than what I say about it. Timed as whole processes on this box,
 two runs each: 0.27 s and 0.33 s for a 128x96 fixture, 4.7 s and 6.1 s for a 4032x3024 JPEG at 2 MB (not committed - that second file
 is a synthetic gradient with noise in it at the resolution a common phone shoots at, not a photograph, and nothing in
 this repo is a real sky yet), and the spread between its two runs is why I give both numbers instead of a confident
@@ -260,3 +324,55 @@ treating the 1/6 as a bug in my own harness. It reproduced across two independen
 now says plainly, that this is a model limit and not a quantisation artifact. At some point I stopped debugging and
 accepted that the model is genuinely that unreliable at picking. Knowing that is worth more than knowing why my
 code was right, and the only way I found it was to measure before I built.
+
+## Why open innovation matters here
+
+Three things about this project only work because the pieces are open, and the third one is uncomfortable.
+
+The model is open-weight - Gemma 3 1B IT, q4, 584,417,280 bytes, run through LiteRT-LM 0.16.1 on the CPU backend -
+and that is not a licensing nicety. It is why the app can have no `INTERNET` permission at all. A hosted model puts
+a network permission in the manifest, and then "nothing leaves the phone" becomes a promise about my intentions.
+Open weights turned a privacy claim into a fact about a file, which is the kind of claim a test can hold.
+
+The arithmetic is open, so the central claim of this post is checkable rather than believable. The band sampler
+exists twice - Kotlin on the phone, Python in `tools/python/skycard.py` - and a test on each side asserts against
+the same five PNG fixtures, so neither language can drift without a failure. The nineteen records behind the model's
+failure rate are JSON files in the repo with a recount script beside them. The finding that a 1B model changed its
+mind in five of six reorderings of the same three options is a claim about weights you can download and run
+yourself. If any of that were closed, you would have to take my word for the number that decided the architecture -
+and that number is the only reason the architecture looks the way it does.
+
+The uncomfortable one: openness is also why I could afford to be pessimistic. Those probe runs cost nothing but
+time, because nobody was metering the calls. Eighteen calls to discover that a model picks badly is a free
+experiment on open weights and an invoice on a hosted API, and an expensive experiment is one you are tempted to
+skip and assume your way past instead. Open weights bought the measurement that demoted the model to the smallest
+job in the app. I do not think I would have paid to be told I was wrong.
+
+## Code, and how it was built
+
+The repository carries the spec it was built from and the plan that decomposed it, both committed, both written
+before the code they describe: `docs/superpowers/specs/2026-10-07-evenlight-design.md` and
+`docs/superpowers/plans/2026-10-08-evenlight.md`. Both are wrong in places the implementation later corrected, and
+section 12 of the spec is a list of claims from an earlier, discarded design - two of which were simply false and
+are named as such. This was built with AI agents over four days. Leaving the arguments in the repo is the only
+honest way to show that; a summary of the process would be a story about it instead.
+
+Counts at the commit this post describes: **89 tests in `:core`, 49 in `:app`, 20 in Python**, no skips and no
+failures. The debug APK is 61,231,992 bytes. The weights are not committed - GitHub's hard per-file limit is
+100 MB and the file is 584,417,280 bytes, so `models/GET_MODEL.md` ships the URL, filename, byte size and SHA-256
+instead, and `*.litertlm` is gitignored so the omission cannot be an accident.
+
+## Prize categories
+
+**Overall.**
+
+**Best Use of Gemma.** Gemma 3 1B IT, q4, on-device through LiteRT-LM 0.16.1, CPU backend, no network. I want to be
+exact about the size of the role, because the honest version is smaller than the category name suggests: the model
+writes one line of prose per card and chooses nothing. Every decision - which band wins, what order the eight go in,
+which of 35 words the evening gets - belongs to a deterministic matcher, because I measured the model failing at
+exactly that job before I wrote the app. If "best use" means the largest role for the model, this is not that entry.
+If it means the most measured one, the eighteen probe calls and nineteen device shots are in the sections above, and
+the records are in the repo.
+
+No other partner category. Nothing here is hosted, and I would rather leave a category empty than stretch a claim
+to fill it.
