@@ -1,7 +1,7 @@
 # Evenlight: I gave the AI the smallest job in the app, and measured why
 
 **Tagline:** one balcony, one sky, one card an evening.
-**Repo:** [github.com/Burry071/evenlight](https://github.com/Burry071/evenlight) - public, 86 commits, first one
+**Repo:** [github.com/Burry071/evenlight](https://github.com/Burry071/evenlight) - public, 91 commits, first one
 2026-10-08 01:55 +0500, inside the entry window.
 **Hacktoberfest 2026, Week 1, theme "Touch Grass."**
 
@@ -57,39 +57,40 @@ Python is so that a change to those numbers cannot pass in one language alone.
 
 ## Demo
 
-The loop end to end first, then every screen at full size. Five panels, in order:
+The real thing first: three screens off a Pixel 7 on the evening of 10 October, shot from a balcony four minutes
+before the sunset the phone had computed for 17:49.
 
-![Setup, Tonight, Shoot, Card and Stack, in that order](docs/images/screens-tour.gif)
+![Shoot, on the phone: the place, the countdown, the shutter](docs/images/phone-shoot.jpg)
 
-That animation and the single-image version of it (`docs/images/screens-sheet.png`) are drawn by
-`tools/python/make_screens.py` from the five committed screenshots, so neither is a hand-arranged collage. It is
-the same claim the Python port makes about the card's maths, applied to the pictures: a change to the source
-files regenerates them, and the sheet says on its own face that these are emulator panels, which is why the card
-in the fourth one reads a sun altitude of -63 degrees.
+Shoot is one tap, under a countdown the device computed itself - in 4 min, sunset 17:49, evening 1 - from NOAA
+solar maths and a pair of coordinates typed in once at setup. No location permission, no network to fetch either.
 
-Setup happens once: a place name and a pair of coordinates, with no location permission and no network to fetch
-either from.
+![The card the phone filed: eight bands, the name thin, sun 0 degrees](docs/images/phone-card.jpg)
 
-![Setup: a place name and a pair of coordinates](docs/images/screen-setup.png)
+Four minutes before sunset the sun's altitude rounds to 0 degrees, and that is what the card says: not a forecast,
+the altitude at the shutter minute. Eight measured bands, a name the matcher chose from a fixed vocabulary of 35
+words, and one line of wording - here in the template's voice, "thin light, measured from this sky", which is what
+the app writes when the model's answer is unusable or absent. The record on the phone says which of the two it
+was; I have not pulled it off the device yet, so I am not going to guess in print.
 
-Tonight is one computed number, minutes until the sun goes down, from NOAA solar maths on the device:
+![The stack on the phone: one evening, no holes](docs/images/phone-stack.jpg)
 
-![Tonight: sunset time and this evening's ordinal](docs/images/screen-tonight.png)
+And the stack, in dark mode: one evening, zero holes. The hole is the design - miss an evening and the stack shows
+the gap instead of pretending.
 
-Shoot is one tap:
+The five-panel walk below is the emulator's, because setup was never photographed on the phone. It is drawn by
+`tools/python/make_screens.py` from five committed screenshots, so it is regenerated rather than collaged, and it
+says on its own face that those panels are emulator panels - which is why the card in its fourth frame reads a sun
+altitude of -63 degrees, there being no sun in a synthetic scene. Set that frame beside the phone's 0 degrees and
+you have the two halves of this post in one picture: what the model phrasing was measured on, and what the
+measurement itself looks like on a real sky.
 
-![Shoot: the shutter, with sunset time beside it](docs/images/screen-shoot.png)
+![Setup, Tonight, Shoot, Card and Stack, in that order, on the emulator](docs/images/screens-tour.gif)
 
-Then the card, which is the whole artefact - eight measured bands, the name the matcher chose, the sun's altitude at
-the shutter minute, and the model's one line:
+Setup asks for a place name and a pair of coordinates, once. The tour's other four panels are the countdown and the
+three phone screens above.
 
-![The rendered card](docs/images/screen-card.png)
-
-And the stack, oldest first, with a visible hole wherever an evening is missing:
-
-![The stack of evenings, with gaps left in](docs/images/screen-stack.png)
-
-Two cards the app actually filed, both reproducible from the JSON beside them:
+Two cards the app actually filed on the emulator, both reproducible from the JSON beside them:
 
 ![A card whose line claims stars in a scene that has none](docs/images/card-2026-10-10.png)
 
@@ -216,7 +217,8 @@ Traps I checked before trusting any of it, because a bad sample is worse than no
   They sample the model's phrasing and the gate's behaviour, which is what this section is about. The bands did move
   between shots (14 distinct band sets out of 19, names `ash` 13 times and `flint` 6), but the sun altitude read
   `-63°`, `-64°` or `-65°` on every card, because there is no sun in the test scene. So: no claim about weather
-  belongs here, and no claim about evenings either.
+  belongs here, and no claim about evenings either. The one real sky in this post is the phone's, at the top of the
+  demo: one evening, sun 0 degrees, and no weather claim attached to it either.
 - **What the gate cannot catch.** Two accepted lines claim stars - `the stars were bright against an ash-colored
   sky.` and `the stars shimmered beneath an ash-lit sky.` - in a scene with no stars and a record that measures
   none. A verifier can only check form, because the only facts this pipeline has are eight colours and one altitude.
@@ -224,9 +226,12 @@ Traps I checked before trusting any of it, because a bad sample is worse than no
   model choose anything at all, "stars" would have been a plausible-looking lie on a card that claims to be a
   measurement.
 
-What this is not yet: a number from the phone I own. The emulator is x86_64 with 3 GB of RAM and, with the model
-resident, about 132 MB free and the low-memory killer active. And it is nineteen shots of one synthetic scene, not a
-season. Two timings, because they are different measurements and averaging them would be a lie: the bare engine call
+What this is not yet: a timing or a memory number from the phone I own. The phone has filed one real evening - the
+three screens at the top of this post, 10 October, sun 0 degrees - but I have not pulled its record or read its
+memory off the device, so every millisecond and megabyte below is still the emulator's: x86_64 with 3 GB of RAM
+and, with the model resident, about 132 MB free and the low-memory killer active. And the emulator's set is
+nineteen shots of one synthetic scene, not a season. Two timings, because they are different measurements and
+averaging them would be a lie: the bare engine call
 in the probe cost 1,080 / 1,247 / 3,502 ms (min / median / max), while inside the app the rewrite lands 11-21 s
 after the record is filed. I have not split that difference up, so I am not going to explain it. Init 4,566 ms, peak
 RSS 1,269 MB, both from the emulator.
@@ -325,10 +330,11 @@ It does have a `share` link, and I would rather overstate that than let a reader
 set is still exactly `{CAMERA}`. Nothing leaves the phone by itself, which the manifest test is the guarantee of -
 not my intention.
 
-There is no real evening in this repo yet. Every card and every record I published came from an emulator pointed at
-its own synthetic scene, and the five PNGs under `fixtures/` are drawn, not photographed. The first sky this app
-measures is the one outside my window, and if I do not shoot it, the stack will show that too - the holes are the
-part of the design that survives my own laziness.
+There is one real evening in this repo now: 10 October, a balcony, four minutes before a sunset the phone computed
+for 17:49, sun 0 degrees, name thin, filed on a Pixel 7 and photographed at the top of this post. Everything else -
+every record behind the measurements above, and the five PNGs under `fixtures/`, which are drawn, not photographed -
+is the emulator's. The rest of the stack is still empty, and it will keep showing that: miss an evening and the hole
+stays visible. That is the part of the design that survives my own laziness.
 
 One thing I did learn, and it is the reason the model ended up with the smallest job in the app: I spent days
 treating the 1/6 as a bug in my own harness. It reproduced across two independent runtimes, which is what the spec
